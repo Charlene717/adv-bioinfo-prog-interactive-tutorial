@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>生醫資訊程式設計 (進階) — 參考資料 · References</title>
+<meta name="description" content="Advanced Bioinformatics Programming Interactive Tutorial 20 個主題的學術論文、官方文件、Best Practices 與工具來源整理。">
+<link rel="stylesheet" href="../styles.css">
+<style>
+/* References-specific styling */
+.ref-list{list-style:none;padding:0;margin:14px 0 0}
+.ref-list li{padding:14px 16px;background:var(--c-surface-alt);border:1px solid var(--c-border-light);border-radius:var(--radius);margin-bottom:10px;font-size:.92rem;line-height:1.65}
+.ref-list li:hover{background:var(--c-surface);border-color:var(--c-border)}
+.ref-tag{display:inline-block;font-family:var(--font-mono);font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:6px;margin-right:8px;letter-spacing:.5px}
+.ref-tag.paper{background:var(--c-accent-light);color:var(--c-accent-dark)}
+.ref-tag.doc{background:#e3f2fd;color:#1565c0}
+.ref-tag.bench{background:#fff3e0;color:#e65100}
+.ref-tag.db{background:#fce4ec;color:#ad1457}
+.ref-tag.book{background:#f3e5f5;color:#6a1b9a}
+.ref-tag.bestp{background:var(--c-highlight-light);color:#a06a00;border:1px solid var(--c-highlight)}
+.ref-author{color:var(--c-ink);font-weight:600}
+.ref-title{color:var(--c-ink);font-weight:500}
+.ref-meta{color:var(--c-ink-muted);font-size:.85rem;margin-top:4px;display:block}
+.ref-list a{color:var(--c-accent);text-decoration:none;border-bottom:1px dotted var(--c-accent)}
+.ref-list a:hover{color:var(--c-accent-dark);border-bottom-style:solid}
+.errata{background:#fef3c7;border-left:4px solid #d97706;border-radius:0 var(--radius-lg) var(--radius-lg) 0;padding:18px 22px;margin:18px 0;font-size:.9rem}
+.errata h4{margin:0 0 8px;color:#92400e;font-family:var(--font-display);font-size:1.05rem}
+.errata p{color:#78350f;margin-bottom:8px}
+.errata p:last-child{margin-bottom:0}
+.toc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin:18px 0}
+.toc-grid a{padding:10px 14px;background:var(--c-surface);border:1px solid var(--c-border-light);border-radius:var(--radius);text-decoration:none;color:var(--c-ink);font-size:.88rem;transition:var(--transition);display:flex;align-items:center;gap:8px}
+.toc-grid a:hover{border-color:var(--c-accent);background:var(--c-accent-light);color:var(--c-accent-dark)}
+.toc-grid a .step-tag{font-family:var(--font-mono);font-size:.72rem;color:var(--c-accent);font-weight:600}
+.section-anchor{scroll-margin-top:80px}
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+<div class="top-nav-inner">
+  <a href="../index.html" class="top-nav-brand"><span>🛠️</span> <span data-zh="進階程式" data-en="Advanced Prog.">進階程式</span></a>
+  <ul class="top-nav-links">
+    <li><a href="../advanced-python.html">Py</a></li>
+    <li><a href="../advanced-r.html">R</a></li>
+    <li><a href="../profiling-optimization.html">Prof.</a></li>
+    <li><a href="../parallel-computing.html">Para.</a></li>
+    <li><a href="../gpu-bioinformatics.html">GPU</a></li>
+    <li><a href="../bio-data-formats.html">Data</a></li>
+    <li><a href="../databases-bio.html">DB</a></li>
+    <li><a href="../testing-strategies.html">Test</a></li>
+    <li><a href="../docker-containers.html">Docker</a></li>
+    <li><a href="../workflow-engines.html">WF</a></li>
+    <li><a href="../reproducible-science.html">Repro.</a></li>
+    <li><a href="index.html" class="active" style="font-weight:700">📚 References</a></li>
+    <li><a href="../adv-bioinfo-prog-quiz/index.html">🎯 Quiz</a></li>
+  </ul>
+</div>
+</nav>
+
+<header class="page-hero">
+<div class="step-badge">參考資料 · REFERENCES</div>
+<h1 data-zh="學術論文、官方文件與工具參考" data-en="Papers, Official Docs & Tool References">學術論文、官方文件與工具參考</h1>
+<p class="subtitle" data-zh="為 Advanced Bioinformatics Programming Interactive Tutorial 的 20 個主題提供原始論文、官方文件、Best Practices 與 benchmark 的完整佐證。" data-en="Curated papers, official docs, best-practice guides and benchmarks backing the 20 topics in the Advanced Bioinformatics Programming Interactive Tutorial.">為 Advanced Bioinformatics Programming Interactive Tutorial 的 20 個主題提供原始論文、官方文件、Best Practices 與 benchmark 的完整佐證。</p>
+</header>
+
+<main class="content-wrap">
+
+<!-- Overview -->
+<section class="section">
+<div class="section-label">概覽 · OVERVIEW</div>
+<h2 data-zh="如何使用這份資料？" data-en="How to use this page">如何使用這份資料？</h2>
+<p data-zh="本頁針對教學中提到的每個工具、套件、語言特性與工程實踐，整理其學術出處或官方文件。引用標籤含義：" data-en="This page collects the primary source (paper, doc, or official guide) for every tool, package, language feature and engineering practice mentioned in the tutorial. Tag legend:">本頁針對教學中提到的每個工具、套件、語言特性與工程實踐，整理其學術出處或官方文件。引用標籤含義：</p>
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon" style="background:var(--c-accent-light)">📄</div><h4>Paper</h4><p data-zh="原始論文 · 含 DOI / PubMed" data-en="Primary paper · with DOI / PubMed">原始論文 · 含 DOI / PubMed</p></div>
+  <div class="card"><div class="card-icon" style="background:#e3f2fd">📘</div><h4>Doc</h4><p data-zh="官方文件、vignette、tutorial" data-en="Official docs, vignettes, tutorials">官方文件、vignette、tutorial</p></div>
+  <div class="card"><div class="card-icon" style="background:var(--c-highlight-light)">⭐</div><h4>Best Practice</h4><p data-zh="系統性綜述或 community 推薦" data-en="Systematic review / community guide">系統性綜述或 community 推薦</p></div>
+  <div class="card"><div class="card-icon" style="background:#fff3e0">📊</div><h4>Benchmark</h4><p data-zh="獨立 benchmark / 效能評比" data-en="Independent benchmark / perf eval">獨立 benchmark / 效能評比</p></div>
+  <div class="card"><div class="card-icon" style="background:#fce4ec">🗄️</div><h4>Database</h4><p data-zh="資料庫、registry、API endpoint" data-en="Database, registry, API endpoint">資料庫、registry、API endpoint</p></div>
+  <div class="card"><div class="card-icon" style="background:#f3e5f5">📚</div><h4>Book</h4><p data-zh="線上免費書籍與教科書" data-en="Online free books / textbooks">線上免費書籍與教科書</p></div>
+</div>
+
+<h3 data-zh="本頁目錄（20 主題）" data-en="Page contents (20 topics)">本頁目錄（20 主題）</h3>
+<div class="toc-grid">
+  <a href="#a1-advanced-python"><span class="step-tag">A1</span><span data-zh="進階 Python" data-en="Advanced Python">進階 Python</span></a>
+  <a href="#a2-advanced-r"><span class="step-tag">A2</span><span data-zh="進階 R" data-en="Advanced R">進階 R</span></a>
+  <a href="#a3-functional-programming"><span class="step-tag">A3</span><span data-zh="函式程式設計" data-en="Functional Programming">函式程式設計</span></a>
+  <a href="#a4-error-logging"><span class="step-tag">A4</span><span data-zh="例外處理與日誌" data-en="Error Handling & Logging">例外處理與日誌</span></a>
+  <a href="#b1-profiling"><span class="step-tag">B1</span><span data-zh="Profiling 與最佳化" data-en="Profiling & Optimization">Profiling 與最佳化</span></a>
+  <a href="#b2-vectorization"><span class="step-tag">B2</span><span data-zh="向量化與 JIT 編譯" data-en="Vectorization & Compilation">向量化與 JIT 編譯</span></a>
+  <a href="#b3-parallel"><span class="step-tag">B3</span><span data-zh="平行運算" data-en="Parallel Computing">平行運算</span></a>
+  <a href="#b4-gpu"><span class="step-tag">B4</span><span data-zh="生資 GPU 加速" data-en="GPU for Bioinformatics">生資 GPU 加速</span></a>
+  <a href="#c1-bio-formats"><span class="step-tag">C1</span><span data-zh="生物資料格式" data-en="Bio Data Formats">生物資料格式</span></a>
+  <a href="#c2-big-data-tables"><span class="step-tag">C2</span><span data-zh="大型資料表" data-en="Big Data Tables">大型資料表</span></a>
+  <a href="#c3-databases-apis"><span class="step-tag">C3</span><span data-zh="資料庫與 API" data-en="Databases & APIs">資料庫與 API</span></a>
+  <a href="#c4-data-validation"><span class="step-tag">C4</span><span data-zh="資料驗證" data-en="Data Validation">資料驗證</span></a>
+  <a href="#d1-advanced-git"><span class="step-tag">D1</span><span data-zh="進階 Git" data-en="Advanced Git">進階 Git</span></a>
+  <a href="#d2-testing"><span class="step-tag">D2</span><span data-zh="測試策略" data-en="Testing Strategies">測試策略</span></a>
+  <a href="#d3-package-dev"><span class="step-tag">D3</span><span data-zh="套件開發" data-en="Package Development">套件開發</span></a>
+  <a href="#d4-apis-web"><span class="step-tag">D4</span><span data-zh="API 與 Web Services" data-en="APIs & Web Services">API 與 Web Services</span></a>
+  <a href="#e1-containers"><span class="step-tag">E1</span><span data-zh="容器化" data-en="Containers">容器化</span></a>
+  <a href="#e2-workflows"><span class="step-tag">E2</span><span data-zh="工作流引擎" data-en="Workflow Engines">工作流引擎</span></a>
+  <a href="#e3-hpc-cloud"><span class="step-tag">E3</span><span data-zh="HPC 與雲端" data-en="HPC & Cloud">HPC 與雲端</span></a>
+  <a href="#e4-reproducible"><span class="step-tag">E4</span><span data-zh="可重現研究" data-en="Reproducible Science">可重現研究</span></a>
+  <a href="#errata"><span class="step-tag">!</span><span data-zh="工具使用提醒與 caveats" data-en="Tooling caveats & errata">工具使用提醒與 caveats</span></a>
+</div>
+</section>
+
+<!-- ===================== A1: Advanced Python ===================== -->
+<section class="section section-anchor" id="a1-advanced-python">
+<div class="section-label">A1</div>
+<h2 data-zh="🐍 進階 Python（type hints / async / metaclasses / dataclasses）" data-en="🐍 Advanced Python (type hints / async / metaclasses / dataclasses)">🐍 進階 Python（type hints / async / metaclasses / dataclasses）</h2>
+<p data-zh="型別註解、非同步、描述器與裝飾器的官方規範與權威教材。Pydantic v2 為現代 Python 資料模型工具的事實標準。" data-en="Type hints, async, descriptors, decorators — authoritative PEPs and books. Pydantic v2 is the de facto data-model toolkit for modern Python.">型別註解、非同步、描述器與裝飾器的官方規範與權威教材。Pydantic v2 為現代 Python 資料模型工具的事實標準。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC · PEP</span>
+    <span class="ref-author">van Rossum G, Lehtosalo J, Langa Ł.</span>
+    <span class="ref-title"> PEP 484 — Type Hints. </span>
+    Python Enhancement Proposal (2014).
+    <span class="ref-meta"><a href="https://peps.python.org/pep-0484/" target="_blank" rel="noopener">peps.python.org/pep-0484</a> · 後續 PEP 526 / 585 / 604 補充 generic 與 union 寫法</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Python <code>typing</code> module — Support for type hints. </span>
+    Python 官方文件。
+    <span class="ref-meta"><a href="https://docs.python.org/3/library/typing.html" target="_blank" rel="noopener">docs.python.org/3/library/typing</a></span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Ramalho L.</span>
+    <span class="ref-title"> Fluent Python, 2nd Edition. </span>
+    O'Reilly Media (2022). <strong>(descriptors、metaclasses、async 全面解說)</strong>
+    <span class="ref-meta">ISBN 978-1492056355 · <a href="https://www.fluentpython.com/" target="_blank" rel="noopener">fluentpython.com</a></span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Beazley D, Jones BK.</span>
+    <span class="ref-title"> Python Cookbook, 3rd Edition. </span>
+    O'Reilly Media (2013).
+    <span class="ref-meta">ISBN 978-1449340377 · <a href="https://www.dabeaz.com/cookbook.html" target="_blank" rel="noopener">dabeaz.com/cookbook</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Pydantic v2 — Data validation using Python type hints. </span>
+    官方文件（包含 v1→v2 遷移指南、效能說明）。
+    <span class="ref-meta"><a href="https://docs.pydantic.dev/latest/" target="_blank" rel="noopener">docs.pydantic.dev</a> · GitHub <a href="https://github.com/pydantic/pydantic" target="_blank" rel="noopener">pydantic/pydantic</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-author">Beazley D.</span>
+    <span class="ref-title"> "Python Concurrency from the Ground Up" / "Build Your Own Async". </span>
+    PyCon 2015 / 2019 keynote talks.
+    <span class="ref-meta"><a href="https://www.dabeaz.com/talks.html" target="_blank" rel="noopener">dabeaz.com/talks</a> · 影片 <a href="https://www.youtube.com/watch?v=MCs5OvhV9S4" target="_blank" rel="noopener">Python Concurrency from the Ground Up</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Real Python — Primer on Python Decorators / Async IO in Python. </span>
+    教學系列。
+    <span class="ref-meta"><a href="https://realpython.com/primer-on-python-decorators/" target="_blank" rel="noopener">realpython.com/primer-on-python-decorators</a> · <a href="https://realpython.com/async-io-python/" target="_blank" rel="noopener">realpython.com/async-io-python</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC · PEP</span>
+    <span class="ref-title">PEP 557 — Data Classes / PEP 3107 — Function Annotations / PEP 612 — ParamSpec. </span>
+    <span class="ref-meta"><a href="https://peps.python.org/pep-0557/" target="_blank" rel="noopener">PEP 557</a> · <a href="https://peps.python.org/pep-0612/" target="_blank" rel="noopener">PEP 612</a></span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== A2: Advanced R ===================== -->
+<section class="section section-anchor" id="a2-advanced-r">
+<div class="section-label">A2</div>
+<h2 data-zh="📊 進階 R（S4 / R6 / tidy eval / NSE）" data-en="📊 Advanced R (S4 / R6 / tidy eval / NSE)">📊 進階 R（S4 / R6 / tidy eval / NSE）</h2>
+<p data-zh="R 的物件系統（S3/S4/R6）、tidy evaluation 與 metaprogramming。Wickham 兩本免費線上書是學進階 R 的事實標準。" data-en="R object systems (S3/S4/R6), tidy evaluation and metaprogramming. Wickham's two free online books are the de facto standard for advanced R.">R 的物件系統（S3/S4/R6）、tidy evaluation 與 metaprogramming。Wickham 兩本免費線上書是學進階 R 的事實標準。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Wickham H.</span>
+    <span class="ref-title"> Advanced R, 2nd Edition. </span>
+    Chapman & Hall/CRC (2019), 線上免費。
+    <span class="ref-meta"><a href="https://adv-r.hadley.nz/" target="_blank" rel="noopener">adv-r.hadley.nz</a> · 涵蓋 metaprogramming、tidy eval、R6/S4、performance</span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Wickham H, Bryan J.</span>
+    <span class="ref-title"> R Packages, 2nd Edition. </span>
+    O'Reilly (2023), 線上免費。
+    <span class="ref-meta"><a href="https://r-pkgs.org/" target="_blank" rel="noopener">r-pkgs.org</a> · 含 testthat、roxygen2、pkgdown、CI/CD 章節</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-author">Chambers JM, R Core Team.</span>
+    <span class="ref-title"> Methods package & S4 system documentation. </span>
+    Bioconductor "S4 in 15 minutes" vignette。
+    <span class="ref-meta"><a href="https://bioconductor.org/help/course-materials/2017/Zurich/S4-classes-and-methods.html" target="_blank" rel="noopener">Bioconductor / S4 classes and methods</a> · <a href="https://stat.ethz.ch/R-manual/R-devel/library/methods/html/Methods.html" target="_blank" rel="noopener">stat.ethz.ch / methods</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">R6 — Encapsulated classes with reference semantics. </span>
+    CRAN package by Wickham H. (Posit/RStudio)。
+    <span class="ref-meta"><a href="https://r6.r-lib.org/" target="_blank" rel="noopener">r6.r-lib.org</a> · <a href="https://cran.r-project.org/package=R6" target="_blank" rel="noopener">CRAN/R6</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">rlang — Tidy evaluation reference (<code>quote()</code>, <code>enquo()</code>, <code>!!</code>, <code>{{}}</code>). </span>
+    <span class="ref-meta"><a href="https://rlang.r-lib.org/" target="_blank" rel="noopener">rlang.r-lib.org</a> · 程式設計 dplyr 函式時必讀</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-author">Henry L, Wickham H.</span>
+    <span class="ref-title"> Programming with dplyr (tidy eval vignette). </span>
+    Posit blog & vignette。
+    <span class="ref-meta"><a href="https://dplyr.tidyverse.org/articles/programming.html" target="_blank" rel="noopener">dplyr.tidyverse.org / programming</a></span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Wickham H.</span>
+    <span class="ref-title"> Mastering Shiny. </span>
+    O'Reilly (2021), 線上免費（含進階 module、reactive programming 設計模式）。
+    <span class="ref-meta"><a href="https://mastering-shiny.org/" target="_blank" rel="noopener">mastering-shiny.org</a></span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== A3: Functional Programming ===================== -->
+<section class="section section-anchor" id="a3-functional-programming">
+<div class="section-label">A3</div>
+<h2 data-zh="λ 函式程式設計（map / reduce / pipe / immutability）" data-en="λ Functional Programming (map / reduce / pipe / immutability)">λ 函式程式設計（map / reduce / pipe / immutability）</h2>
+<p data-zh="Pure function、higher-order function、pipe、closure 等概念在 Python（functools）與 R（purrr）的習慣寫法。" data-en="Pure functions, higher-order functions, pipes and closures — idiomatic patterns in Python (functools) and R (purrr).">Pure function、higher-order function、pipe、closure 等概念在 Python（functools）與 R（purrr）的習慣寫法。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">purrr — Functional programming tools for R. </span>
+    Tidyverse package by Henry L. & Wickham H.
+    <span class="ref-meta"><a href="https://purrr.tidyverse.org/" target="_blank" rel="noopener">purrr.tidyverse.org</a> · 含 <code>map_*</code>、<code>walk_*</code>、<code>safely()</code>、<code>possibly()</code> 等</span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Mailund T.</span>
+    <span class="ref-title"> Functional Programming in R: Advanced Statistical Programming for Data Science, Analysis and Finance. </span>
+    Apress (2017).
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1007/978-1-4842-2746-6" target="_blank" rel="noopener">10.1007/978-1-4842-2746-6</a> · ISBN 978-1484227459</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Python <code>functools</code> — Higher-order functions and operations on callable objects. </span>
+    Python 官方文件（含 <code>partial</code>、<code>reduce</code>、<code>lru_cache</code>、<code>singledispatch</code>）。
+    <span class="ref-meta"><a href="https://docs.python.org/3/library/functools.html" target="_blank" rel="noopener">docs.python.org/3/library/functools</a> · 另見 <code>itertools</code></span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Lott SF.</span>
+    <span class="ref-title"> Functional Python Programming, 3rd Edition. </span>
+    Packt Publishing (2022).
+    <span class="ref-meta">ISBN 978-1803232577</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-author">Wickham H et al.</span>
+    <span class="ref-title"> Tidyverse design principles (tidyverse.org/principles). </span>
+    Posit / Tidyverse team。
+    <span class="ref-meta"><a href="https://design.tidyverse.org/" target="_blank" rel="noopener">design.tidyverse.org</a> · 含 pipe、tibble、tidy data 三大設計原則</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC · PEP</span>
+    <span class="ref-title">PEP 8 / PEP 20 — Code style & The Zen of Python; PEP 3104 — non-local statement (closures). </span>
+    <span class="ref-meta"><a href="https://peps.python.org/pep-0020/" target="_blank" rel="noopener">peps.python.org/pep-0020</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">toolz — A functional standard library for Python. </span>
+    GitHub & docs.
+    <span class="ref-meta"><a href="https://toolz.readthedocs.io/" target="_blank" rel="noopener">toolz.readthedocs.io</a> · 提供 curry、compose、pipe</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== A4: Error Handling & Logging ===================== -->
+<section class="section section-anchor" id="a4-error-logging">
+<div class="section-label">A4</div>
+<h2 data-zh="🪵 例外處理與日誌（logging / loguru / lgr / Sentry）" data-en="🪵 Error Handling & Logging (logging / loguru / lgr / Sentry)">🪵 例外處理與日誌（logging / loguru / lgr / Sentry）</h2>
+<p data-zh="結構化日誌、log level 設計、log 寫入 stdout 而非檔案、錯誤追蹤與 alerting 的工程實踐。" data-en="Structured logging, log-level design, writing logs to stdout (not files), error tracking and alerting practices.">結構化日誌、log level 設計、log 寫入 stdout 而非檔案、錯誤追蹤與 alerting 的工程實踐。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Python <code>logging</code> — Logging facility for Python. </span>
+    含 HOWTO 教學與 Cookbook。
+    <span class="ref-meta"><a href="https://docs.python.org/3/library/logging.html" target="_blank" rel="noopener">docs.python.org/3/library/logging</a> · <a href="https://docs.python.org/3/howto/logging.html" target="_blank" rel="noopener">HOWTO</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">loguru — Python logging made (stupidly) simple. </span>
+    GitHub & ReadTheDocs。
+    <span class="ref-meta"><a href="https://loguru.readthedocs.io/" target="_blank" rel="noopener">loguru.readthedocs.io</a> · <a href="https://github.com/Delgan/loguru" target="_blank" rel="noopener">github.com/Delgan/loguru</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-author">Schratz M.</span>
+    <span class="ref-title"> lgr — A logging package for R. </span>
+    CRAN.
+    <span class="ref-meta"><a href="https://cran.r-project.org/package=lgr" target="_blank" rel="noopener">CRAN/lgr</a> · <a href="https://s-fleck.github.io/lgr/" target="_blank" rel="noopener">s-fleck.github.io/lgr</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Sentry — Python SDK documentation. </span>
+    error tracking & APM.
+    <span class="ref-meta"><a href="https://docs.sentry.io/platforms/python/" target="_blank" rel="noopener">docs.sentry.io/platforms/python</a></span>
+  </li>
+  <li>
+    <span class="ref-tag bestp">⭐ BEST</span>
+    <span class="ref-author">Wiggins A.</span>
+    <span class="ref-title"> The Twelve-Factor App — XI. Logs. </span>
+    12factor.net (2017)。
+    <span class="ref-meta"><a href="https://12factor.net/logs" target="_blank" rel="noopener">12factor.net/logs</a> · 「Treat logs as event streams」</span>
+  </li>
+  <li>
+    <span class="ref-tag bestp">⭐ TIP</span>
+    <span class="ref-author">McGranaghan B.</span>
+    <span class="ref-title"> "Logs are streams, not files" / "Logging the right way" series. </span>
+    blog post.
+    <span class="ref-meta"><a href="https://brandur.org/logfmt" target="_blank" rel="noopener">brandur.org/logfmt</a> · structured logging 的代表性論述</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">structlog — Make logging in Python less painful. </span>
+    structured logging 的 Python 套件。
+    <span class="ref-meta"><a href="https://www.structlog.org/" target="_blank" rel="noopener">structlog.org</a></span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== B1: Profiling & Optimization ===================== -->
+<section class="section section-anchor" id="b1-profiling">
+<div class="section-label">B1</div>
+<h2 data-zh="⏱️ Profiling 與最佳化（cProfile / py-spy / profvis / bench）" data-en="⏱️ Profiling & Optimization (cProfile / py-spy / profvis / bench)">⏱️ Profiling 與最佳化（cProfile / py-spy / profvis / bench）</h2>
+<p data-zh="先量測、後最佳化。原則：Amdahl's Law、避免 premature optimization、區分 CPU-bound vs I/O-bound。" data-en="Measure first, optimize second. Principles: Amdahl's Law, avoid premature optimization, distinguish CPU-bound from I/O-bound.">先量測、後最佳化。原則：Amdahl's Law、避免 premature optimization、區分 CPU-bound vs I/O-bound。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Python <code>cProfile</code> / <code>profile</code> — The Python profilers. </span>
+    Python 官方文件。
+    <span class="ref-meta"><a href="https://docs.python.org/3/library/profile.html" target="_blank" rel="noopener">docs.python.org/3/library/profile</a> · 搭配 <a href="https://github.com/jrfonseca/gprof2dot" target="_blank" rel="noopener">gprof2dot</a> 視覺化</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-author">Frederickson B.</span>
+    <span class="ref-title"> py-spy — Sampling profiler for Python programs. </span>
+    GitHub。
+    <span class="ref-meta"><a href="https://github.com/benfred/py-spy" target="_blank" rel="noopener">github.com/benfred/py-spy</a> · 可附掛已執行中的 process、不需修改原始碼</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">profvis — Interactive visualisations for profiling R code. </span>
+    Posit package。
+    <span class="ref-meta"><a href="https://profvis.r-lib.org/" target="_blank" rel="noopener">profvis.r-lib.org</a> · 基於 R <code>Rprof()</code> 的 flamegraph 視覺化</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">bench — High Precision Timing of R Expressions. </span>
+    CRAN package by Hester J. (Posit)。
+    <span class="ref-meta"><a href="https://bench.r-lib.org/" target="_blank" rel="noopener">bench.r-lib.org</a> · 替代老牌 microbenchmark，提供 GC 與 memory 統計</span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Gorelick M, Ozsvald I.</span>
+    <span class="ref-title"> High Performance Python, 3rd Edition. </span>
+    O'Reilly Media (2025).
+    <span class="ref-meta">ISBN 978-1098165963 · 涵蓋 cProfile、line_profiler、memory_profiler、Cython、Numba、async、Dask</span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Gregg B.</span>
+    <span class="ref-title"> Systems Performance: Enterprise and the Cloud, 2nd Edition. </span>
+    Addison-Wesley (2020).
+    <span class="ref-meta">ISBN 978-0136820154 · <a href="https://www.brendangregg.com/systems-performance-2nd-edition-book.html" target="_blank" rel="noopener">brendangregg.com</a> · flame graph 與 USE method 的權威著作</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-author">Gregg B.</span>
+    <span class="ref-title"> Flame Graphs (interactive visualizations of profiled software). </span>
+    <span class="ref-meta"><a href="https://www.brendangregg.com/flamegraphs.html" target="_blank" rel="noopener">brendangregg.com/flamegraphs</a></span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== B2: Vectorization & Compilation ===================== -->
+<section class="section section-anchor" id="b2-vectorization">
+<div class="section-label">B2</div>
+<h2 data-zh="⚡ 向量化與 JIT 編譯（NumPy / Numba / Cython / Rcpp）" data-en="⚡ Vectorization & JIT Compilation (NumPy / Numba / Cython / Rcpp)">⚡ 向量化與 JIT 編譯（NumPy / Numba / Cython / Rcpp）</h2>
+<p data-zh="從 Python loop → vectorize → JIT → C extension 的加速階梯；R 端則是 R loop → vapply → Rcpp。" data-en="The acceleration ladder: Python loop → vectorize → JIT → C extension; in R: loop → vapply → Rcpp.">從 Python loop → vectorize → JIT → C extension 的加速階梯；R 端則是 R loop → vapply → Rcpp。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag paper">PAPER · NumPy</span>
+    <span class="ref-author">Harris CR, Millman KJ, van der Walt SJ, et al.</span>
+    <span class="ref-title"> Array programming with NumPy. </span>
+    <em>Nature</em> 585:357–362 (2020).
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1038/s41586-020-2649-2" target="_blank" rel="noopener">10.1038/s41586-020-2649-2</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · Numba</span>
+    <span class="ref-author">Lam SK, Pitrou A, Seibert S.</span>
+    <span class="ref-title"> Numba: A LLVM-based Python JIT Compiler. </span>
+    Proc. LLVM-HPC 2015, Article 7 (2015).
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1145/2833157.2833162" target="_blank" rel="noopener">10.1145/2833157.2833162</a> · 官網 <a href="https://numba.pydata.org/" target="_blank" rel="noopener">numba.pydata.org</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-author">Behnel S, Bradshaw R, Citro C, et al.</span>
+    <span class="ref-title"> Cython: The Best of Both Worlds. </span>
+    <em>Computing in Science & Engineering</em> 13(2):31–39 (2011)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1109/MCSE.2010.118" target="_blank" rel="noopener">10.1109/MCSE.2010.118</a> · 官方文件 <a href="https://cython.readthedocs.io/" target="_blank" rel="noopener">cython.readthedocs.io</a></span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Eddelbuettel D.</span>
+    <span class="ref-title"> Seamless R and C++ Integration with Rcpp. </span>
+    Springer Use R! series (2013).
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1007/978-1-4614-6868-4" target="_blank" rel="noopener">10.1007/978-1-4614-6868-4</a> · ISBN 978-1461468677</span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · RcppArmadillo</span>
+    <span class="ref-author">Eddelbuettel D, Sanderson C.</span>
+    <span class="ref-title"> RcppArmadillo: Accelerating R with high-performance C++ linear algebra. </span>
+    <em>Computational Statistics and Data Analysis</em> 71:1054–1063 (2014).
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1016/j.csda.2013.02.005" target="_blank" rel="noopener">10.1016/j.csda.2013.02.005</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Numba documentation — @jit, @njit, parallel=True, target_backend='cuda'. </span>
+    <span class="ref-meta"><a href="https://numba.readthedocs.io/" target="_blank" rel="noopener">numba.readthedocs.io</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Rcpp — Seamless R and C++ Integration. </span>
+    CRAN & vignettes (Rcpp-introduction, Rcpp-sugar, Rcpp-attributes)。
+    <span class="ref-meta"><a href="https://www.rcpp.org/" target="_blank" rel="noopener">rcpp.org</a> · <a href="https://cran.r-project.org/package=Rcpp" target="_blank" rel="noopener">CRAN/Rcpp</a></span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== B3: Parallel Computing ===================== -->
+<section class="section section-anchor" id="b3-parallel">
+<div class="section-label">B3</div>
+<h2 data-zh="🧵 平行運算（multiprocessing / joblib / future / BiocParallel）" data-en="🧵 Parallel Computing (multiprocessing / joblib / future / BiocParallel)">🧵 平行運算（multiprocessing / joblib / future / BiocParallel）</h2>
+<p data-zh="Python GIL 的繞道（multiprocessing、threading、async、subinterpreter）；R 的 future / parallel / BiocParallel 抽象層。" data-en="Working around Python's GIL (multiprocessing, threading, async, subinterpreters) and R's future / parallel / BiocParallel abstraction layers.">Python GIL 的繞道（multiprocessing、threading、async、subinterpreter）；R 的 future / parallel / BiocParallel 抽象層。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag paper">PAPER · future</span>
+    <span class="ref-author">Bengtsson H.</span>
+    <span class="ref-title"> A Unifying Framework for Parallel and Distributed Processing in R using Futures. </span>
+    <em>The R Journal</em> 13(2):208–227 (2021).
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.32614/RJ-2021-048" target="_blank" rel="noopener">10.32614/RJ-2021-048</a> · GitHub <a href="https://github.com/HenrikBengtsson/future" target="_blank" rel="noopener">HenrikBengtsson/future</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">joblib — running Python functions as pipeline jobs. </span>
+    <span class="ref-meta"><a href="https://joblib.readthedocs.io/" target="_blank" rel="noopener">joblib.readthedocs.io</a> · <code>Parallel(n_jobs=-1)</code>、Memory caching、scikit-learn 內建依賴</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">BiocParallel — Bioconductor facilities for parallel evaluation. </span>
+    含 SerialParam / MulticoreParam / SnowParam / BatchtoolsParam。
+    <span class="ref-meta"><a href="https://bioconductor.org/packages/release/bioc/html/BiocParallel.html" target="_blank" rel="noopener">Bioconductor/BiocParallel</a> · <a href="https://bioconductor.org/packages/release/bioc/vignettes/BiocParallel/inst/doc/Introduction_To_BiocParallel.html" target="_blank" rel="noopener">vignette</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Python <code>multiprocessing</code> / <code>concurrent.futures</code> docs. </span>
+    Python 官方文件。
+    <span class="ref-meta"><a href="https://docs.python.org/3/library/multiprocessing.html" target="_blank" rel="noopener">docs.python.org/3/library/multiprocessing</a> · <a href="https://docs.python.org/3/library/concurrent.futures.html" target="_blank" rel="noopener">concurrent.futures</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC · PEP</span>
+    <span class="ref-title">PEP 703 — Making the Global Interpreter Lock Optional in CPython; PEP 684 — Per-Interpreter GIL. </span>
+    <span class="ref-meta"><a href="https://peps.python.org/pep-0703/" target="_blank" rel="noopener">PEP 703</a> · <a href="https://peps.python.org/pep-0684/" target="_blank" rel="noopener">PEP 684</a> · Python 3.13+ 起 free-threaded build 漸進可用</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">furrr — Apply purrr-style functions in parallel with future. </span>
+    <span class="ref-meta"><a href="https://furrr.futureverse.org/" target="_blank" rel="noopener">furrr.futureverse.org</a> · <code>future_map()</code> 為 <code>purrr::map()</code> 的平行版本</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Dask — Parallel computing with task scheduling. </span>
+    <span class="ref-meta"><a href="https://docs.dask.org/" target="_blank" rel="noopener">docs.dask.org</a> · 提供 distributed scheduler、dataframe、array、bag、delayed API</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== B4: GPU ===================== -->
+<section class="section section-anchor" id="b4-gpu">
+<div class="section-label">B4</div>
+<h2 data-zh="🎮 生資 GPU 加速（rapids-singlecell / JAX / CuPy / PyTorch）" data-en="🎮 GPU for Bioinformatics (rapids-singlecell / JAX / CuPy / PyTorch)">🎮 生資 GPU 加速（rapids-singlecell / JAX / CuPy / PyTorch）</h2>
+<p data-zh="近年 single-cell 分析從 CPU 走向 GPU：rapids-singlecell 把 scanpy API 整套搬到 cuDF/cuML 上；JAX 與 PyTorch 是深度學習基礎。" data-en="Single-cell analysis is migrating from CPU to GPU: rapids-singlecell ports the scanpy API onto cuDF/cuML; JAX and PyTorch are the deep-learning foundations.">近年 single-cell 分析從 CPU 走向 GPU：rapids-singlecell 把 scanpy API 整套搬到 cuDF/cuML 上；JAX 與 PyTorch 是深度學習基礎。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag paper">PAPER · rapids-singlecell</span>
+    <span class="ref-author">Ehlers S, Theis FJ, Wolf FA, et al.</span>
+    <span class="ref-title"> rapids-singlecell: GPU-accelerated single-cell data analysis. </span>
+    <em>Bioinformatics</em> 40(12):btae709 (2024)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1093/bioinformatics/btae709" target="_blank" rel="noopener">10.1093/bioinformatics/btae709</a> · GitHub <a href="https://github.com/scverse/rapids_singlecell" target="_blank" rel="noopener">scverse/rapids_singlecell</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">JAX — Composable transformations of Python+NumPy programs. </span>
+    Google Research; 提供 <code>jit</code>, <code>grad</code>, <code>vmap</code>, <code>pmap</code>。
+    <span class="ref-meta"><a href="https://jax.readthedocs.io/" target="_blank" rel="noopener">jax.readthedocs.io</a> · GitHub <a href="https://github.com/google/jax" target="_blank" rel="noopener">google/jax</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · JAX</span>
+    <span class="ref-author">Frostig R, Johnson MJ, Leary C.</span>
+    <span class="ref-title"> Compiling machine learning programs via high-level tracing. </span>
+    SysML Conference (2018)。
+    <span class="ref-meta"><a href="https://mlsys.org/Conferences/doc/2018/146.pdf" target="_blank" rel="noopener">mlsys.org/2018/146</a> · JAX 設計理念原始 paper</span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · PyTorch</span>
+    <span class="ref-author">Paszke A, Gross S, Massa F, et al.</span>
+    <span class="ref-title"> PyTorch: An Imperative Style, High-Performance Deep Learning Library. </span>
+    NeurIPS 2019。
+    <span class="ref-meta"><a href="https://papers.nips.cc/paper/9015-pytorch-an-imperative-style-high-performance-deep-learning-library" target="_blank" rel="noopener">papers.nips.cc/2019/9015</a> · 官方文件 <a href="https://pytorch.org/docs/stable/" target="_blank" rel="noopener">pytorch.org/docs</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · CuPy</span>
+    <span class="ref-author">Okuta R, Unno Y, Nishino D, Hido S, Loomis C.</span>
+    <span class="ref-title"> CuPy: A NumPy-Compatible Library for NVIDIA GPU Calculations. </span>
+    NIPS Workshop on ML Systems (2017)。
+    <span class="ref-meta">官網 <a href="https://cupy.dev/" target="_blank" rel="noopener">cupy.dev</a> · <a href="https://learningsys.org/nips17/assets/papers/paper_16.pdf" target="_blank" rel="noopener">paper PDF</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">NVIDIA RAPIDS — Open GPU Data Science (cuDF / cuML / cuGraph). </span>
+    <span class="ref-meta"><a href="https://rapids.ai/" target="_blank" rel="noopener">rapids.ai</a> · 在生資場景被 rapids-singlecell、scvi-tools 大量採用</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">scvi-tools — Probabilistic models of single-cell omics data. </span>
+    GPU-accelerated（基於 PyTorch / PyTorch Lightning）。
+    <span class="ref-meta"><a href="https://scvi-tools.org/" target="_blank" rel="noopener">scvi-tools.org</a> · 含 scVI、scANVI、totalVI、CellAssign 等模型</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== C1: Bio Data Formats ===================== -->
+<section class="section section-anchor" id="c1-bio-formats">
+<div class="section-label">C1</div>
+<h2 data-zh="📦 生物資料格式（HDF5 / Zarr / Parquet / AnnData / MuData）" data-en="📦 Bio Data Formats (HDF5 / Zarr / Parquet / AnnData / MuData)">📦 生物資料格式（HDF5 / Zarr / Parquet / AnnData / MuData）</h2>
+<p data-zh="從 FASTQ/BAM 到 HDF5/Zarr/Parquet 的儲存格式選擇；AnnData / MuData 是 single-cell 的事實標準容器。" data-en="From FASTQ/BAM to HDF5/Zarr/Parquet storage choices; AnnData and MuData are the de facto containers for single-cell.">從 FASTQ/BAM 到 HDF5/Zarr/Parquet 的儲存格式選擇；AnnData / MuData 是 single-cell 的事實標準容器。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">HDF5 User's Guide. </span>
+    HDF Group。
+    <span class="ref-meta"><a href="https://docs.hdfgroup.org/hdf5/v1_14/_u_g.html" target="_blank" rel="noopener">docs.hdfgroup.org/hdf5</a> · h5py: <a href="https://docs.h5py.org/" target="_blank" rel="noopener">docs.h5py.org</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Zarr — Chunked, compressed, N-dimensional arrays (v2 & v3 spec). </span>
+    <span class="ref-meta"><a href="https://zarr.readthedocs.io/" target="_blank" rel="noopener">zarr.readthedocs.io</a> · <a href="https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html" target="_blank" rel="noopener">Zarr v3 spec</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Apache Parquet — Columnar storage format. </span>
+    <span class="ref-meta"><a href="https://parquet.apache.org/docs/" target="_blank" rel="noopener">parquet.apache.org/docs</a> · 規格 <a href="https://github.com/apache/parquet-format" target="_blank" rel="noopener">apache/parquet-format</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Apache Arrow — In-memory columnar format & zero-copy data interchange. </span>
+    <span class="ref-meta"><a href="https://arrow.apache.org/docs/" target="_blank" rel="noopener">arrow.apache.org/docs</a> · 為 Polars/DuckDB/Pandas 2 共用基礎</span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · AnnData</span>
+    <span class="ref-author">Virshup I, Rybakov S, Theis FJ, Angerer P, Wolf FA.</span>
+    <span class="ref-title"> anndata: Annotated data. </span>
+    <em>bioRxiv</em> 2021.12.16.473007 (2021)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1101/2021.12.16.473007" target="_blank" rel="noopener">10.1101/2021.12.16.473007</a> · 官方文件 <a href="https://anndata.readthedocs.io/" target="_blank" rel="noopener">anndata.readthedocs.io</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · MuData</span>
+    <span class="ref-author">Bredikhin D, Kats I, Stegle O.</span>
+    <span class="ref-title"> MUON: multimodal omics analysis framework. </span>
+    <em>Genome Biology</em> 23:42 (2022)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1186/s13059-021-02577-8" target="_blank" rel="noopener">10.1186/s13059-021-02577-8</a> · MuData 文件 <a href="https://mudata.readthedocs.io/" target="_blank" rel="noopener">mudata.readthedocs.io</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · tabix</span>
+    <span class="ref-author">Li H.</span>
+    <span class="ref-title"> Tabix: fast retrieval of sequence features from generic TAB-delimited files. </span>
+    <em>Bioinformatics</em> 27(5):718–719 (2011)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1093/bioinformatics/btq671" target="_blank" rel="noopener">10.1093/bioinformatics/btq671</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">SAM/BAM/CRAM specification — samtools.github.io/hts-specs. </span>
+    <span class="ref-meta"><a href="https://samtools.github.io/hts-specs/" target="_blank" rel="noopener">samtools.github.io/hts-specs</a> · VCF / GFF3 / BED 等格式同此 hub</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== C2: Big Data Tables ===================== -->
+<section class="section section-anchor" id="c2-big-data-tables">
+<div class="section-label">C2</div>
+<h2 data-zh="🗂️ 大型資料表（Polars / DuckDB / Dask / Spark / Hail）" data-en="🗂️ Big Data Tables (Polars / DuckDB / Dask / Spark / Hail)">🗂️ 大型資料表（Polars / DuckDB / Dask / Spark / Hail）</h2>
+<p data-zh="2024+ 趨勢：Polars 與 DuckDB 在單機資料分析上挑戰 pandas；Hail 是 genomic data lake 的事實標準。" data-en="2024+ trend: Polars and DuckDB challenge pandas for single-machine analytics; Hail is the de facto genomic data-lake stack.">2024+ 趨勢：Polars 與 DuckDB 在單機資料分析上挑戰 pandas；Hail 是 genomic data lake 的事實標準。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Polars — DataFrames for the new era（lazy / eager / streaming API）。</span>
+    <span class="ref-meta"><a href="https://pola.rs/" target="_blank" rel="noopener">pola.rs</a> · 文件 <a href="https://docs.pola.rs/" target="_blank" rel="noopener">docs.pola.rs</a> · GitHub <a href="https://github.com/pola-rs/polars" target="_blank" rel="noopener">pola-rs/polars</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · DuckDB</span>
+    <span class="ref-author">Raasveldt M, Mühleisen H.</span>
+    <span class="ref-title"> DuckDB: an Embeddable Analytical Database. </span>
+    SIGMOD 2019 Demonstration Track。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1145/3299869.3320212" target="_blank" rel="noopener">10.1145/3299869.3320212</a> · 官方文件 <a href="https://duckdb.org/docs/" target="_blank" rel="noopener">duckdb.org/docs</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Dask — Scalable analytics in Python. </span>
+    <span class="ref-meta"><a href="https://docs.dask.org/" target="_blank" rel="noopener">docs.dask.org</a> · dask.dataframe、dask.array、dask.bag、delayed</span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · Spark</span>
+    <span class="ref-author">Zaharia M, Xin RS, Wendell P, et al.</span>
+    <span class="ref-title"> Apache Spark: A Unified Engine for Big Data Processing. </span>
+    <em>Communications of the ACM</em> 59(11):56–65 (2016)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1145/2934664" target="_blank" rel="noopener">10.1145/2934664</a> · 官方文件 <a href="https://spark.apache.org/docs/latest/" target="_blank" rel="noopener">spark.apache.org/docs</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Hail — Open-source library for scalable genomics. </span>
+    Broad Institute / Neale Lab。
+    <span class="ref-meta"><a href="https://hail.is/" target="_blank" rel="noopener">hail.is</a> · GitHub <a href="https://github.com/hail-is/hail" target="_blank" rel="noopener">hail-is/hail</a> · gnomAD / UK Biobank 標準分析工具</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">data.table — Extension of <code>data.frame</code> in R. </span>
+    CRAN package by Dowle M., Srinivasan A.
+    <span class="ref-meta"><a href="https://rdatatable.gitlab.io/data.table/" target="_blank" rel="noopener">rdatatable.gitlab.io/data.table</a> · GitHub <a href="https://github.com/Rdatatable/data.table" target="_blank" rel="noopener">Rdatatable/data.table</a></span>
+  </li>
+  <li>
+    <span class="ref-tag bench">BENCH</span>
+    <span class="ref-title">DuckDB & Polars vs pandas — TPC-H, DB-benchmark by H2O.ai。</span>
+    <span class="ref-meta"><a href="https://duckdblabs.github.io/db-benchmark/" target="_blank" rel="noopener">duckdblabs.github.io/db-benchmark</a> · 1B-row group-by/join benchmark</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== C3: Databases & APIs ===================== -->
+<section class="section section-anchor" id="c3-databases-apis">
+<div class="section-label">C3</div>
+<h2 data-zh="🗄️ 資料庫與 API（Ensembl / UCSC / UniProt / NCBI / SQLAlchemy）" data-en="🗄️ Databases & APIs (Ensembl / UCSC / UniProt / NCBI / SQLAlchemy)">🗄️ 資料庫與 API（Ensembl / UCSC / UniProt / NCBI / SQLAlchemy）</h2>
+<p data-zh="生資公共資料庫的程式化存取（REST / GraphQL / E-utils），以及 Python 與 R 端的 ORM 與 query 抽象層。" data-en="Programmatic access to bioinformatics public databases (REST / GraphQL / E-utils) and ORM/query abstraction layers in Python and R.">生資公共資料庫的程式化存取（REST / GraphQL / E-utils），以及 Python 與 R 端的 ORM 與 query 抽象層。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag db">DB</span>
+    <span class="ref-title">Ensembl REST API. </span>
+    含 lookup、sequence、variation、regulation、homology endpoints。
+    <span class="ref-meta"><a href="https://rest.ensembl.org/" target="_blank" rel="noopener">rest.ensembl.org</a> · 引用 Martin FJ et al. <em>NAR</em> 2023</span>
+  </li>
+  <li>
+    <span class="ref-tag db">DB</span>
+    <span class="ref-title">UCSC Genome Browser REST API & Public MySQL server. </span>
+    <span class="ref-meta"><a href="https://genome.ucsc.edu/goldenPath/help/api.html" target="_blank" rel="noopener">genome.ucsc.edu/goldenPath/help/api</a></span>
+  </li>
+  <li>
+    <span class="ref-tag db">DB</span>
+    <span class="ref-title">UniProt — Programmatic access (REST + SPARQL endpoint at sparql.uniprot.org)。</span>
+    <span class="ref-meta"><a href="https://www.uniprot.org/help/programmatic_access" target="_blank" rel="noopener">uniprot.org/help/programmatic_access</a></span>
+  </li>
+  <li>
+    <span class="ref-tag db">DB</span>
+    <span class="ref-title">NCBI Entrez Programming Utilities (E-utilities). </span>
+    <span class="ref-meta"><a href="https://www.ncbi.nlm.nih.gov/books/NBK25501/" target="_blank" rel="noopener">NCBI Bookshelf NBK25501</a> · Python: <a href="https://biopython.org/" target="_blank" rel="noopener">Biopython Bio.Entrez</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">SQLAlchemy — The Database Toolkit for Python. </span>
+    含 Core 與 ORM 兩層 API。
+    <span class="ref-meta"><a href="https://docs.sqlalchemy.org/" target="_blank" rel="noopener">docs.sqlalchemy.org</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">dbplyr — A 'dplyr' Back End for Databases. </span>
+    Posit / tidyverse。
+    <span class="ref-meta"><a href="https://dbplyr.tidyverse.org/" target="_blank" rel="noopener">dbplyr.tidyverse.org</a> · 將 dplyr 動詞翻譯為 SQL</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">PostgreSQL Documentation. </span>
+    The PostgreSQL Global Development Group。
+    <span class="ref-meta"><a href="https://www.postgresql.org/docs/current/" target="_blank" rel="noopener">postgresql.org/docs</a> · 含 JSONB、window functions、CTEs</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">pgvector — Open-source vector similarity search for Postgres. </span>
+    <span class="ref-meta"><a href="https://github.com/pgvector/pgvector" target="_blank" rel="noopener">github.com/pgvector/pgvector</a> · 用於 RAG / embedding 儲存</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">GraphQL Specification & Best Practices. </span>
+    <span class="ref-meta"><a href="https://spec.graphql.org/" target="_blank" rel="noopener">spec.graphql.org</a> · Ensembl 2024 起逐步推出 GraphQL endpoint</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== C4: Data Validation ===================== -->
+<section class="section section-anchor" id="c4-data-validation">
+<div class="section-label">C4</div>
+<h2 data-zh="✅ 資料驗證（Pandera / great_expectations / pointblank / dbt）" data-en="✅ Data Validation (Pandera / great_expectations / pointblank / dbt)">✅ 資料驗證（Pandera / great_expectations / pointblank / dbt）</h2>
+<p data-zh="schema-on-read vs schema-on-write、testable data contracts、pipeline 中加入 assert 點。" data-en="schema-on-read vs schema-on-write, testable data contracts, embedding asserts in pipelines.">schema-on-read vs schema-on-write、testable data contracts、pipeline 中加入 assert 點。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Pandera — A statistical typing and data testing library for Python. </span>
+    支援 pandas / Polars / Dask / Modin。
+    <span class="ref-meta"><a href="https://pandera.readthedocs.io/" target="_blank" rel="noopener">pandera.readthedocs.io</a> · GitHub <a href="https://github.com/unionai-oss/pandera" target="_blank" rel="noopener">unionai-oss/pandera</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Great Expectations — Always know what to expect from your data. </span>
+    <span class="ref-meta"><a href="https://docs.greatexpectations.io/" target="_blank" rel="noopener">docs.greatexpectations.io</a> · expectation suite / data docs / checkpoint 三大概念</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">pointblank — Data quality assessment and metadata reporting for R & Python. </span>
+    Posit / Rich Iannone。
+    <span class="ref-meta"><a href="https://rstudio.github.io/pointblank/" target="_blank" rel="noopener">rstudio.github.io/pointblank</a> · CRAN <a href="https://cran.r-project.org/package=pointblank" target="_blank" rel="noopener">pointblank</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">validate — Data validation infrastructure for R. </span>
+    by van der Loo MPJ., de Jonge E. (CBS Netherlands)。
+    <span class="ref-meta"><a href="https://cran.r-project.org/package=validate" target="_blank" rel="noopener">CRAN/validate</a> · 配合書 Statistical Data Cleaning with R</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">dbt — Data build tool（含 tests、sources、snapshots、lineage）。</span>
+    <span class="ref-meta"><a href="https://docs.getdbt.com/" target="_blank" rel="noopener">docs.getdbt.com</a> · 適合 warehouse-side SQL transformation 的測試</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">OpenLineage — Open standard for data lineage. </span>
+    Linux Foundation AI & Data。
+    <span class="ref-meta"><a href="https://openlineage.io/docs/" target="_blank" rel="noopener">openlineage.io/docs</a></span>
+  </li>
+  <li>
+    <span class="ref-tag bestp">⭐ TIP</span>
+    <span class="ref-author">Fowler M.</span>
+    <span class="ref-title"> "Schemaless Data Structures" / "Data Mesh Principles". </span>
+    martinfowler.com blog posts。
+    <span class="ref-meta"><a href="https://martinfowler.com/articles/schemaless/" target="_blank" rel="noopener">martinfowler.com/articles/schemaless</a></span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== D1: Advanced Git ===================== -->
+<section class="section section-anchor" id="d1-advanced-git">
+<div class="section-label">D1</div>
+<h2 data-zh="🌿 進階 Git（rebase / cherry-pick / hooks / LFS / SemVer）" data-en="🌿 Advanced Git (rebase / cherry-pick / hooks / LFS / SemVer)">🌿 進階 Git（rebase / cherry-pick / hooks / LFS / SemVer）</h2>
+<p data-zh="git internals、commit message 規範、版號規範、pre-commit hook 與大型資料的 LFS 儲存策略。" data-en="Git internals, commit-message conventions, versioning specs, pre-commit hooks, and large-file storage via LFS.">git internals、commit message 規範、版號規範、pre-commit hook 與大型資料的 LFS 儲存策略。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Chacon S, Straub B.</span>
+    <span class="ref-title"> Pro Git, 2nd Edition. </span>
+    Apress (2014), 線上免費。
+    <span class="ref-meta"><a href="https://git-scm.com/book/en/v2" target="_blank" rel="noopener">git-scm.com/book/en/v2</a> · ISBN 978-1484200773</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Conventional Commits 1.0.0 — A specification for adding human and machine readable meaning to commit messages. </span>
+    <span class="ref-meta"><a href="https://www.conventionalcommits.org/" target="_blank" rel="noopener">conventionalcommits.org</a> · 搭配 semantic-release 自動化版號</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-author">Preston-Werner T.</span>
+    <span class="ref-title"> Semantic Versioning 2.0.0. </span>
+    <span class="ref-meta"><a href="https://semver.org/" target="_blank" rel="noopener">semver.org</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">pre-commit — A framework for managing and maintaining multi-language pre-commit hooks. </span>
+    <span class="ref-meta"><a href="https://pre-commit.com/" target="_blank" rel="noopener">pre-commit.com</a> · GitHub <a href="https://github.com/pre-commit/pre-commit" target="_blank" rel="noopener">pre-commit/pre-commit</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Git Large File Storage (Git LFS). </span>
+    <span class="ref-meta"><a href="https://git-lfs.com/" target="_blank" rel="noopener">git-lfs.com</a> · 注意 GitHub 對 LFS 流量收費；生資大檔案可考慮 Zenodo / DataLad</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">GitHub Flow & trunk-based development guide。</span>
+    <span class="ref-meta"><a href="https://docs.github.com/en/get-started/quickstart/github-flow" target="_blank" rel="noopener">docs.github.com/get-started/github-flow</a> · 另見 <a href="https://trunkbaseddevelopment.com/" target="_blank" rel="noopener">trunkbaseddevelopment.com</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">DataLad — Distribution of data tracked via git-annex. </span>
+    <span class="ref-meta"><a href="https://www.datalad.org/" target="_blank" rel="noopener">datalad.org</a> · 適合科學資料版本控制（>>Git LFS）</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== D2: Testing Strategies ===================== -->
+<section class="section section-anchor" id="d2-testing">
+<div class="section-label">D2</div>
+<h2 data-zh="🧪 測試策略（pytest / testthat / Hypothesis / coverage）" data-en="🧪 Testing Strategies (pytest / testthat / Hypothesis / coverage)">🧪 測試策略（pytest / testthat / Hypothesis / coverage）</h2>
+<p data-zh="testing pyramid（unit > integration > end-to-end）；property-based testing 自動產生反例；coverage 報表與 CI 整合。" data-en="Testing pyramid (unit > integration > E2E); property-based testing for auto-generated counter-examples; coverage reports & CI integration.">testing pyramid（unit > integration > end-to-end）；property-based testing 自動產生反例；coverage 報表與 CI 整合。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Cohn M.</span>
+    <span class="ref-title"> Succeeding with Agile: Software Development Using Scrum. </span>
+    Addison-Wesley (2009). <strong>(Testing Pyramid 概念來源)</strong>
+    <span class="ref-meta">ISBN 978-0321579362</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">pytest — The pytest framework. </span>
+    含 fixture、parametrize、monkeypatch、tmp_path。
+    <span class="ref-meta"><a href="https://docs.pytest.org/" target="_blank" rel="noopener">docs.pytest.org</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">testthat — Unit testing for R. </span>
+    含 expect_* / describe / snapshot test API。
+    <span class="ref-meta"><a href="https://testthat.r-lib.org/" target="_blank" rel="noopener">testthat.r-lib.org</a> · R Packages 第 13 章</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Hypothesis — Property-based testing for Python. </span>
+    <span class="ref-meta"><a href="https://hypothesis.readthedocs.io/" target="_blank" rel="noopener">hypothesis.readthedocs.io</a> · 官網 <a href="https://hypothesis.works/" target="_blank" rel="noopener">hypothesis.works</a></span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Feathers M.</span>
+    <span class="ref-title"> Working Effectively with Legacy Code. </span>
+    Prentice Hall (2004)。
+    <span class="ref-meta">ISBN 978-0131177055 · 「沒有測試的程式碼即為 legacy code」</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Coverage.py — Tool for measuring code coverage of Python programs. </span>
+    <span class="ref-meta"><a href="https://coverage.readthedocs.io/" target="_blank" rel="noopener">coverage.readthedocs.io</a> · 與 pytest-cov / Codecov / Coveralls 整合</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">nf-test — Testing framework for Nextflow pipelines. </span>
+    <span class="ref-meta"><a href="https://www.nf-test.com/" target="_blank" rel="noopener">nf-test.com</a> · 由 nf-core community 開發</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== D3: Package Development ===================== -->
+<section class="section section-anchor" id="d3-package-dev">
+<div class="section-label">D3</div>
+<h2 data-zh="📦 套件開發（PyPA / uv / Hatch / Bioconductor / CRAN）" data-en="📦 Package Development (PyPA / uv / Hatch / Bioconductor / CRAN)">📦 套件開發（PyPA / uv / Hatch / Bioconductor / CRAN）</h2>
+<p data-zh="2024+ Python 打包工具鏈轉向 uv（Rust 寫的極速 pip/poetry 取代品）；R 端 R Packages 2e 仍為事實標準教材。" data-en="2024+ Python packaging is consolidating around uv (Rust-based, replacing pip/poetry); on the R side R Packages 2e remains the canonical book.">2024+ Python 打包工具鏈轉向 uv（Rust 寫的極速 pip/poetry 取代品）；R 端 R Packages 2e 仍為事實標準教材。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Python Packaging User Guide. </span>
+    Python Packaging Authority (PyPA)。
+    <span class="ref-meta"><a href="https://packaging.python.org/" target="_blank" rel="noopener">packaging.python.org</a> · pyproject.toml（PEP 517/518/621）的權威指南</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">uv — An extremely fast Python package and project manager. </span>
+    Astral (Charlie Marsh)。
+    <span class="ref-meta"><a href="https://docs.astral.sh/uv/" target="_blank" rel="noopener">docs.astral.sh/uv</a> · GitHub <a href="https://github.com/astral-sh/uv" target="_blank" rel="noopener">astral-sh/uv</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Hatch — A modern, extensible Python project manager. </span>
+    <span class="ref-meta"><a href="https://hatch.pypa.io/" target="_blank" rel="noopener">hatch.pypa.io</a> · PyPA-endorsed</span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">Wickham H, Bryan J.</span>
+    <span class="ref-title"> R Packages, 2nd Edition. </span>
+    O'Reilly (2023), 線上免費。
+    <span class="ref-meta"><a href="https://r-pkgs.org/" target="_blank" rel="noopener">r-pkgs.org</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Bioconductor Package Guidelines for Developers. </span>
+    含 vignette、unit test、BiocCheck 要求。
+    <span class="ref-meta"><a href="https://contributions.bioconductor.org/" target="_blank" rel="noopener">contributions.bioconductor.org</a> · <a href="https://bioconductor.org/developers/package-guidelines/" target="_blank" rel="noopener">bioconductor.org/developers</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">CRAN Repository Policy. </span>
+    R Foundation。
+    <span class="ref-meta"><a href="https://cran.r-project.org/web/packages/policies.html" target="_blank" rel="noopener">cran.r-project.org/web/packages/policies.html</a> · 含檔案大小、R CMD check warning 等規範</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">pkgdown — Build websites for R packages. </span>
+    <span class="ref-meta"><a href="https://pkgdown.r-lib.org/" target="_blank" rel="noopener">pkgdown.r-lib.org</a> · 自動由 roxygen 註解產生文件網站</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Bioconductor BiocCheck — Bioconductor-specific package checks. </span>
+    <span class="ref-meta"><a href="https://bioconductor.org/packages/release/bioc/html/BiocCheck.html" target="_blank" rel="noopener">Bioconductor/BiocCheck</a></span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== D4: APIs & Web Services ===================== -->
+<section class="section section-anchor" id="d4-apis-web">
+<div class="section-label">D4</div>
+<h2 data-zh="🌐 API 與 Web Services（FastAPI / plumber / Shiny / Streamlit）" data-en="🌐 APIs & Web Services (FastAPI / plumber / Shiny / Streamlit)">🌐 API 與 Web Services（FastAPI / plumber / Shiny / Streamlit）</h2>
+<p data-zh="把分析包成 REST API（FastAPI / plumber）或互動式 dashboard（Shiny / Streamlit / shinylive）的工具。" data-en="Tools for wrapping analyses as REST APIs (FastAPI / plumber) or interactive dashboards (Shiny / Streamlit / shinylive).">把分析包成 REST API（FastAPI / plumber）或互動式 dashboard（Shiny / Streamlit / shinylive）的工具。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">FastAPI — Modern, fast (high-performance), web framework for building APIs with Python. </span>
+    by Ramírez S.
+    <span class="ref-meta"><a href="https://fastapi.tiangolo.com/" target="_blank" rel="noopener">fastapi.tiangolo.com</a> · 基於 Starlette + Pydantic</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">plumber — Turn your R code into a web API. </span>
+    Posit。
+    <span class="ref-meta"><a href="https://www.rplumber.io/" target="_blank" rel="noopener">rplumber.io</a> · CRAN <a href="https://cran.r-project.org/package=plumber" target="_blank" rel="noopener">plumber</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Shiny for R / Shiny for Python — Interactive web applications. </span>
+    Posit。
+    <span class="ref-meta"><a href="https://shiny.posit.co/" target="_blank" rel="noopener">shiny.posit.co</a> · Python 版 <a href="https://shiny.posit.co/py/" target="_blank" rel="noopener">shiny.posit.co/py</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Streamlit — A faster way to build and share data apps. </span>
+    Snowflake / Streamlit Inc.
+    <span class="ref-meta"><a href="https://docs.streamlit.io/" target="_blank" rel="noopener">docs.streamlit.io</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">OpenAPI Specification 3.1.0. </span>
+    OpenAPI Initiative (Linux Foundation)。
+    <span class="ref-meta"><a href="https://spec.openapis.org/oas/v3.1.0" target="_blank" rel="noopener">spec.openapis.org/oas/v3.1.0</a> · FastAPI 自動產生 OpenAPI 文件</span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · REST</span>
+    <span class="ref-author">Fielding RT.</span>
+    <span class="ref-title"> Architectural Styles and the Design of Network-based Software Architectures. </span>
+    PhD dissertation, UC Irvine (2000)。<strong>(REST 原始定義)</strong>
+    <span class="ref-meta"><a href="https://www.ics.uci.edu/~fielding/pubs/dissertation/top.htm" target="_blank" rel="noopener">ics.uci.edu/~fielding/pubs/dissertation</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">shinylive — Run Shiny applications entirely in the browser via WebAssembly. </span>
+    <span class="ref-meta"><a href="https://shinylive.io/" target="_blank" rel="noopener">shinylive.io</a> · 基於 Pyodide / webR</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== E1: Containers ===================== -->
+<section class="section section-anchor" id="e1-containers">
+<div class="section-label">E1</div>
+<h2 data-zh="🐳 容器化（Docker / Apptainer / BioContainers / Rocker）" data-en="🐳 Containers (Docker / Apptainer / BioContainers / Rocker)">🐳 容器化（Docker / Apptainer / BioContainers / Rocker）</h2>
+<p data-zh="Docker 為事實標準；Apptainer（前身 Singularity）為 HPC 環境替代品；BioContainers 提供 Bioconda 套件的對應 Docker image。" data-en="Docker is the de facto standard; Apptainer (formerly Singularity) replaces it for HPC; BioContainers ships Docker images for every Bioconda package.">Docker 為事實標準；Apptainer（前身 Singularity）為 HPC 環境替代品；BioContainers 提供 Bioconda 套件的對應 Docker image。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag paper">PAPER</span>
+    <span class="ref-author">Boettiger C.</span>
+    <span class="ref-title"> An introduction to Docker for reproducible research. </span>
+    <em>ACM SIGOPS Operating Systems Review</em> 49(1):71–79 (2015)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1145/2723872.2723882" target="_blank" rel="noopener">10.1145/2723872.2723882</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · Rocker</span>
+    <span class="ref-author">Boettiger C, Eddelbuettel D.</span>
+    <span class="ref-title"> An Introduction to Rocker: Docker Containers for R. </span>
+    <em>The R Journal</em> 9(2):527–536 (2017)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.32614/RJ-2017-065" target="_blank" rel="noopener">10.32614/RJ-2017-065</a> · 官網 <a href="https://rocker-project.org/" target="_blank" rel="noopener">rocker-project.org</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · BioContainers</span>
+    <span class="ref-author">da Veiga Leprevost F, Grüning BA, Aflitos SA, et al.</span>
+    <span class="ref-title"> BioContainers: an open-source and community-driven framework for software standardization. </span>
+    <em>Bioinformatics</em> 33(16):2580–2582 (2017)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1093/bioinformatics/btx192" target="_blank" rel="noopener">10.1093/bioinformatics/btx192</a> · 官網 <a href="https://biocontainers.pro/" target="_blank" rel="noopener">biocontainers.pro</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · Singularity</span>
+    <span class="ref-author">Kurtzer GM, Sochat V, Bauer MW.</span>
+    <span class="ref-title"> Singularity: Scientific containers for mobility of compute. </span>
+    <em>PLoS ONE</em> 12(5):e0177459 (2017)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1371/journal.pone.0177459" target="_blank" rel="noopener">10.1371/journal.pone.0177459</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Apptainer Documentation. </span>
+    Linux Foundation / Apptainer。
+    <span class="ref-meta"><a href="https://apptainer.org/docs/" target="_blank" rel="noopener">apptainer.org/docs</a> · 由 Sylabs Singularity 社群分支而來</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Docker Documentation. </span>
+    Docker Inc.
+    <span class="ref-meta"><a href="https://docs.docker.com/" target="_blank" rel="noopener">docs.docker.com</a> · 含 multi-stage build、BuildKit、compose</span>
+  </li>
+  <li>
+    <span class="ref-tag bestp">⭐ TIP</span>
+    <span class="ref-title">Snakemake & Nextflow 對容器化的整合：<code>singularity://</code> URI / <code>docker://</code> URI。</span>
+    <span class="ref-meta"><a href="https://snakemake.readthedocs.io/en/stable/snakefiles/deployment.html#running-jobs-in-containers" target="_blank" rel="noopener">snakemake / containers</a></span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== E2: Workflow Engines ===================== -->
+<section class="section section-anchor" id="e2-workflows">
+<div class="section-label">E2</div>
+<h2 data-zh="🔗 工作流引擎（Snakemake / Nextflow / nf-core / WDL / Cromwell）" data-en="🔗 Workflow Engines (Snakemake / Nextflow / nf-core / WDL / Cromwell)">🔗 工作流引擎（Snakemake / Nextflow / nf-core / WDL / Cromwell）</h2>
+<p data-zh="可重現、可擴展、可移植的多階段分析；Snakemake 在 Python 圈、Nextflow + nf-core 在 NGS 社群最為主流。" data-en="Reproducible, scalable, portable multi-stage analyses; Snakemake dominates the Python world while Nextflow + nf-core leads the NGS community.">可重現、可擴展、可移植的多階段分析；Snakemake 在 Python 圈、Nextflow + nf-core 在 NGS 社群最為主流。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag paper">PAPER · Snakemake</span>
+    <span class="ref-author">Mölder F, Jablonski KP, Letcher B, et al.</span>
+    <span class="ref-title"> Sustainable data analysis with Snakemake. </span>
+    <em>F1000Research</em> 10:33 (2021)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.12688/f1000research.29032.2" target="_blank" rel="noopener">10.12688/f1000research.29032.2</a> · 文件 <a href="https://snakemake.readthedocs.io/" target="_blank" rel="noopener">snakemake.readthedocs.io</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · Nextflow</span>
+    <span class="ref-author">Di Tommaso P, Chatzou M, Floden EW, et al.</span>
+    <span class="ref-title"> Nextflow enables reproducible computational workflows. </span>
+    <em>Nature Biotechnology</em> 35:316–319 (2017)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1038/nbt.3820" target="_blank" rel="noopener">10.1038/nbt.3820</a> · 官網 <a href="https://www.nextflow.io/" target="_blank" rel="noopener">nextflow.io</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · nf-core</span>
+    <span class="ref-author">Ewels PA, Peltzer A, Fillinger S, et al.</span>
+    <span class="ref-title"> The nf-core framework for community-curated bioinformatics pipelines. </span>
+    <em>Nature Biotechnology</em> 38:276–278 (2020)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1038/s41587-020-0439-x" target="_blank" rel="noopener">10.1038/s41587-020-0439-x</a> · 官網 <a href="https://nf-co.re/" target="_blank" rel="noopener">nf-co.re</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">WDL — Workflow Description Language Specification. </span>
+    OpenWDL community。
+    <span class="ref-meta"><a href="https://openwdl.org/" target="_blank" rel="noopener">openwdl.org</a> · 規格 <a href="https://github.com/openwdl/wdl" target="_blank" rel="noopener">openwdl/wdl</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Cromwell — A Workflow Engine in Java. </span>
+    Broad Institute（執行 WDL 與 CWL）。
+    <span class="ref-meta"><a href="https://cromwell.readthedocs.io/" target="_blank" rel="noopener">cromwell.readthedocs.io</a> · GitHub <a href="https://github.com/broadinstitute/cromwell" target="_blank" rel="noopener">broadinstitute/cromwell</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · CWL</span>
+    <span class="ref-author">Crusoe MR, Abeln S, Iosup A, et al.</span>
+    <span class="ref-title"> Methods Included: Standardizing Computational Reuse and Portability with the Common Workflow Language. </span>
+    <em>Communications of the ACM</em> 65(6):54–63 (2022)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1145/3486897" target="_blank" rel="noopener">10.1145/3486897</a> · 官網 <a href="https://www.commonwl.org/" target="_blank" rel="noopener">commonwl.org</a></span>
+  </li>
+  <li>
+    <span class="ref-tag bench">BENCH</span>
+    <span class="ref-author">Wratten L, Wilm A, Göke J.</span>
+    <span class="ref-title"> Reproducible, scalable, and shareable analysis pipelines with bioinformatics workflow managers. </span>
+    <em>Nature Methods</em> 18:1161–1168 (2021)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1038/s41592-021-01254-9" target="_blank" rel="noopener">10.1038/s41592-021-01254-9</a> · 完整比較 Snakemake / Nextflow / WDL / Galaxy / Pegasus</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== E3: HPC & Cloud ===================== -->
+<section class="section section-anchor" id="e3-hpc-cloud">
+<div class="section-label">E3</div>
+<h2 data-zh="☁️ HPC 與雲端（SLURM / AWS / GCP / Terra / DNAnexus）" data-en="☁️ HPC & Cloud (SLURM / AWS / GCP / Terra / DNAnexus)">☁️ HPC 與雲端（SLURM / AWS / GCP / Terra / DNAnexus）</h2>
+<p data-zh="從院內 cluster（SLURM / PBS / SGE）到雲端 batch（AWS Batch / GCP Batch）的執行抽象；Terra 與 DNAnexus 是兩大 genomics-friendly PaaS。" data-en="From on-prem clusters (SLURM/PBS/SGE) to cloud batch (AWS Batch / GCP Batch); Terra and DNAnexus are the two leading genomics-friendly PaaS.">從院內 cluster（SLURM / PBS / SGE）到雲端 batch（AWS Batch / GCP Batch）的執行抽象；Terra 與 DNAnexus 是兩大 genomics-friendly PaaS。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">SLURM Workload Manager Documentation. </span>
+    SchedMD。
+    <span class="ref-meta"><a href="https://slurm.schedmd.com/documentation.html" target="_blank" rel="noopener">slurm.schedmd.com/documentation</a> · 含 <code>sbatch</code> / <code>srun</code> / <code>sacct</code></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">AWS Genomics & Life Sciences on AWS — Whitepaper & reference architectures. </span>
+    Amazon Web Services。
+    <span class="ref-meta"><a href="https://aws.amazon.com/health/genomics/" target="_blank" rel="noopener">aws.amazon.com/health/genomics</a> · 另見 <a href="https://aws.amazon.com/healthomics/" target="_blank" rel="noopener">AWS HealthOmics</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Google Cloud Life Sciences / Batch / Cloud Healthcare API documentation. </span>
+    <span class="ref-meta"><a href="https://cloud.google.com/life-sciences/docs" target="_blank" rel="noopener">cloud.google.com/life-sciences/docs</a> · <a href="https://cloud.google.com/batch/docs" target="_blank" rel="noopener">cloud.google.com/batch/docs</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Terra — Broad Institute's cloud analysis platform. </span>
+    Broad / Verily。
+    <span class="ref-meta"><a href="https://support.terra.bio/" target="_blank" rel="noopener">support.terra.bio</a> · 跑 WDL via Cromwell-on-GCP</span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">DNAnexus Platform Documentation. </span>
+    <span class="ref-meta"><a href="https://documentation.dnanexus.com/" target="_blank" rel="noopener">documentation.dnanexus.com</a> · UK Biobank RAP 與多家 pharma 採用</span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER</span>
+    <span class="ref-author">Schatz MC, Philippakis AA, Afgan E, et al.</span>
+    <span class="ref-title"> Inverting the model of genomics data sharing with the NHGRI Genomic Data Science Analysis, Visualization, and Informatics Lab-space (AnVIL). </span>
+    <em>Cell Genomics</em> 2(1):100085 (2022)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1016/j.xgen.2021.100085" target="_blank" rel="noopener">10.1016/j.xgen.2021.100085</a></span>
+  </li>
+  <li>
+    <span class="ref-tag bestp">⭐ TIP</span>
+    <span class="ref-title">Snakemake & Nextflow 對 cluster executor 的支援（slurm / lsf / sge / awsbatch / google-lifesciences）。</span>
+    <span class="ref-meta"><a href="https://www.nextflow.io/docs/latest/executor.html" target="_blank" rel="noopener">nextflow.io/docs/executor</a></span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== E4: Reproducible Science ===================== -->
+<section class="section section-anchor" id="e4-reproducible">
+<div class="section-label">E4</div>
+<h2 data-zh="🧾 可重現研究（FAIR / Ten Rules / Quarto / The Turing Way）" data-en="🧾 Reproducible Science (FAIR / Ten Rules / Quarto / The Turing Way)">🧾 可重現研究（FAIR / Ten Rules / Quarto / The Turing Way）</h2>
+<p data-zh="可重現研究的概念性指引、社群手冊與支撐工具（Quarto、R Markdown、Jupyter Book）。" data-en="Conceptual guidelines, community handbooks and supporting tools (Quarto, R Markdown, Jupyter Book) for reproducible research.">可重現研究的概念性指引、社群手冊與支撐工具（Quarto、R Markdown、Jupyter Book）。</p>
+<ul class="ref-list">
+  <li>
+    <span class="ref-tag paper">PAPER · 10 Rules</span>
+    <span class="ref-author">Sandve GK, Nekrutenko A, Taylor J, Hovig E.</span>
+    <span class="ref-title"> Ten Simple Rules for Reproducible Computational Research. </span>
+    <em>PLoS Computational Biology</em> 9(10):e1003285 (2013)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1371/journal.pcbi.1003285" target="_blank" rel="noopener">10.1371/journal.pcbi.1003285</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER · FAIR</span>
+    <span class="ref-author">Wilkinson MD, Dumontier M, Aalbersberg IJ, et al.</span>
+    <span class="ref-title"> The FAIR Guiding Principles for scientific data management and stewardship. </span>
+    <em>Scientific Data</em> 3:160018 (2016)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1038/sdata.2016.18" target="_blank" rel="noopener">10.1038/sdata.2016.18</a> · 官網 <a href="https://www.go-fair.org/fair-principles/" target="_blank" rel="noopener">go-fair.org/fair-principles</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER</span>
+    <span class="ref-author">Stodden V, McNutt M, Bailey DH, et al.</span>
+    <span class="ref-title"> Enhancing reproducibility for computational methods. </span>
+    <em>Science</em> 354(6317):1240–1241 (2016)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1126/science.aah6168" target="_blank" rel="noopener">10.1126/science.aah6168</a></span>
+  </li>
+  <li>
+    <span class="ref-tag book">📚 BOOK</span>
+    <span class="ref-author">The Turing Way Community.</span>
+    <span class="ref-title"> The Turing Way: A Handbook for Reproducible, Ethical and Collaborative Research. </span>
+    The Alan Turing Institute (持續更新)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.5281/zenodo.3233853" target="_blank" rel="noopener">10.5281/zenodo.3233853</a> · 線上 <a href="https://the-turing-way.netlify.app/" target="_blank" rel="noopener">the-turing-way.netlify.app</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Quarto — An open-source scientific and technical publishing system. </span>
+    Posit。
+    <span class="ref-meta"><a href="https://quarto.org/" target="_blank" rel="noopener">quarto.org</a> · 文件 <a href="https://quarto.org/docs/guide/" target="_blank" rel="noopener">quarto.org/docs/guide</a></span>
+  </li>
+  <li>
+    <span class="ref-tag paper">PAPER</span>
+    <span class="ref-author">Grüning B, Chilton J, Köster J, et al.</span>
+    <span class="ref-title"> Practical Computational Reproducibility in the Life Sciences. </span>
+    <em>Cell Systems</em> 6(6):631–635 (2018)。
+    <span class="ref-meta">DOI: <a href="https://doi.org/10.1016/j.cels.2018.03.014" target="_blank" rel="noopener">10.1016/j.cels.2018.03.014</a></span>
+  </li>
+  <li>
+    <span class="ref-tag doc">DOC</span>
+    <span class="ref-title">Jupyter Book — Build beautiful, publication-quality books and documents from computational content. </span>
+    <span class="ref-meta"><a href="https://jupyterbook.org/" target="_blank" rel="noopener">jupyterbook.org</a> · 由 Executable Books Project 維護</span>
+  </li>
+</ul>
+</section>
+
+<!-- ===================== Errata ===================== -->
+<section class="section section-anchor" id="errata">
+<div class="section-label">勘誤 · CAVEATS</div>
+<h2 data-zh="⚠️ 工具使用提醒與 caveats" data-en="⚠️ Tooling caveats & known gotchas">⚠️ 工具使用提醒與 caveats</h2>
+<p data-zh="以下為各工具實務上的常見誤解、benchmark 結果不一致之處，以及容易在教學中被忽略的細節。<strong>並非否定原工具，而是補充使用情境上的限制。</strong>" data-en="The following are common misunderstandings, conflicting benchmark conclusions, and easily-overlooked details. None of these invalidate the tools — they merely scope the conditions under which the tools apply.">以下為各工具實務上的常見誤解、benchmark 結果不一致之處，以及容易在教學中被忽略的細節。<strong>並非否定原工具，而是補充使用情境上的限制。</strong></p>
+
+<div class="errata">
+  <h4>B2 Numba：JIT 編譯開銷 (warm-up cost)</h4>
+  <p data-zh="Numba <code>@jit</code>/<code>@njit</code> 第一次呼叫時須花數秒到數十秒做編譯，這個成本在「跑一次小資料」時可能比純 Python 還慢。建議：(1) 用 <code>cache=True</code> 把編譯結果存到 <code>__pycache__</code>；(2) 在 benchmark 時剔除第一次 warm-up；(3) 若僅執行一次小資料，向量化 NumPy 通常較佳。" data-en="The first call to a Numba <code>@jit</code>/<code>@njit</code> function pays a multi-second compilation cost — for one-shot small workloads it can be slower than pure Python. Use <code>cache=True</code>, drop the first call in benchmarks, and prefer vectorized NumPy for tiny single-call workloads.">Numba <code>@jit</code>/<code>@njit</code> 第一次呼叫時須花數秒到數十秒做編譯，這個成本在「跑一次小資料」時可能比純 Python 還慢。建議：(1) 用 <code>cache=True</code> 把編譯結果存到 <code>__pycache__</code>；(2) 在 benchmark 時剔除第一次 warm-up；(3) 若僅執行一次小資料，向量化 NumPy 通常較佳。</p>
+  <p>來源：<a href="https://numba.readthedocs.io/en/stable/user/faq.html#performance" target="_blank" rel="noopener">Numba FAQ — Performance</a>。</p>
+</div>
+
+<div class="errata">
+  <h4>B3 BiocParallel：SerialParam 其實沒有平行</h4>
+  <p data-zh="<code>BiocParallel::SerialParam()</code> 顧名思義是「序列執行」，不會啟動多 worker。許多 Bioconductor 套件（DESeq2、scran、scDblFinder）預設 <code>BPPARAM=SerialParam()</code>，使用者若沒有顯式傳入 <code>MulticoreParam(workers=N)</code> 就只會單核跑。教學中介紹 BiocParallel 時應強調此點。" data-en="<code>BiocParallel::SerialParam()</code> runs serially — it does not spawn workers. Many Bioconductor packages (DESeq2, scran, scDblFinder) default to <code>BPPARAM = SerialParam()</code>, so users who don't explicitly pass <code>MulticoreParam(workers=N)</code> stay single-threaded.">code>BiocParallel::SerialParam()</code> 顧名思義是「序列執行」，不會啟動多 worker。許多 Bioconductor 套件（DESeq2、scran、scDblFinder）預設 <code>BPPARAM=SerialParam()</code>，使用者若沒有顯式傳入 <code>MulticoreParam(workers=N)</code> 就只會單核跑。教學中介紹 BiocParallel 時應強調此點。</p>
+  <p>來源：<a href="https://bioconductor.org/packages/release/bioc/vignettes/BiocParallel/inst/doc/Introduction_To_BiocParallel.html" target="_blank" rel="noopener">BiocParallel Introduction vignette</a>。</p>
+</div>
+
+<div class="errata">
+  <h4>B3 Python multiprocessing：Windows / Jupyter 的 <code>__main__</code> 限制</h4>
+  <p data-zh="在 Windows（spawn start method）與 Jupyter notebook 環境下，<code>multiprocessing.Pool</code> 要求被執行的函式必須能被 pickle 並從 <code>__main__</code> import；常出現 <code>AttributeError: Can't pickle local object</code>。實務上：把 worker function 放在獨立 <code>.py</code> 檔，或改用 <code>concurrent.futures.ProcessPoolExecutor</code> 搭配 <code>if __name__ == '__main__':</code> guard。" data-en="On Windows (spawn start method) and in Jupyter, <code>multiprocessing.Pool</code> requires picklable target functions importable from <code>__main__</code>; otherwise you hit <code>AttributeError: Can't pickle local object</code>. Put workers in a standalone <code>.py</code> module or use <code>concurrent.futures.ProcessPoolExecutor</code> behind <code>if __name__ == '__main__':</code>.">在 Windows（spawn start method）與 Jupyter notebook 環境下，<code>multiprocessing.Pool</code> 要求被執行的函式必須能被 pickle 並從 <code>__main__</code> import；常出現 <code>AttributeError: Can't pickle local object</code>。實務上：把 worker function 放在獨立 <code>.py</code> 檔，或改用 <code>concurrent.futures.ProcessPoolExecutor</code> 搭配 <code>if __name__ == '__main__':</code> guard。</p>
+  <p>來源：<a href="https://docs.python.org/3/library/multiprocessing.html#programming-guidelines" target="_blank" rel="noopener">multiprocessing Programming guidelines</a>。</p>
+</div>
+
+<div class="errata">
+  <h4>C2 Polars vs DuckDB benchmark 結果不一致</h4>
+  <p data-zh="社群常引用 H2O DB-benchmark 顯示 Polars 比 pandas 快 10×、與 DuckDB 互有勝負。實情：勝負取決於 query 類型（group-by 多列 vs join vs window）、資料分佈與是否 lazy。建議：對自己的 workload 用 <code>scan_parquet()</code> + <code>collect()</code> 與 DuckDB <code>read_parquet()</code> 各跑一次再決定，不要單純信任 marketing 數字。" data-en="The widely cited H2O DB-benchmark shows Polars ≫ pandas and Polars vs DuckDB trading wins. Real-world relative speed depends heavily on query shape (multi-column group-by vs joins vs window), data distribution, and whether lazy execution is used. Always benchmark your own workload (<code>scan_parquet</code>+<code>collect</code> for Polars, <code>read_parquet</code> for DuckDB) before committing.">社群常引用 H2O DB-benchmark 顯示 Polars 比 pandas 快 10×、與 DuckDB 互有勝負。實情：勝負取決於 query 類型（group-by 多列 vs join vs window）、資料分佈與是否 lazy。建議：對自己的 workload 用 <code>scan_parquet()</code> + <code>collect()</code> 來實測，不要單純信任 marketing 數字。</p>
+  <p>來源：<a href="https://duckdblabs.github.io/db-benchmark/" target="_blank" rel="noopener">DuckDB Labs db-benchmark</a>。</p>
+</div>
+
+<div class="errata">
+  <h4>C1 AnnData backed mode 的隱性寫入限制</h4>
+  <p data-zh="AnnData 支援 <code>backed='r'</code> 直接從 HDF5 / Zarr 檔懶載入大型矩陣，但這個模式有兩個常被忽略的限制：(1) <code>backed='r+'</code> 寫入 HDF5 在 anndata < 0.10 時對 sparse matrix 會丟資料；(2) backed mode 下 <code>.X</code> 的部分 slicing 與 <code>copy()</code> 行為與 in-memory 不一致。處理 >10⁶ cells 資料時建議用 Zarr backend，並 pin anndata >= 0.10.5。" data-en="AnnData <code>backed='r'</code> lazily loads from HDF5/Zarr, but: (1) <code>backed='r+'</code> writes to HDF5 in anndata < 0.10 silently dropped sparse-matrix data; (2) slicing and <code>.copy()</code> semantics in backed mode differ from in-memory. For >1M-cell datasets prefer the Zarr backend and pin anndata >= 0.10.5.">AnnData 支援 <code>backed='r'</code> 直接從 HDF5 / Zarr 檔懶載入大型矩陣，但這個模式有兩個常被忽略的限制：(1) <code>backed='r+'</code> 寫入 HDF5 在 anndata &lt; 0.10 時對 sparse matrix 會丟資料；(2) backed mode 下 <code>.X</code> 的部分 slicing 與 <code>copy()</code> 行為與 in-memory 不一致。處理 &gt;10⁶ cells 資料時建議用 Zarr backend，並 pin anndata &gt;= 0.10.5。</p>
+  <p>來源：<a href="https://anndata.readthedocs.io/en/latest/release-notes/0.10.0.html" target="_blank" rel="noopener">AnnData 0.10 release notes</a>。</p>
+</div>
+
+<div class="errata">
+  <h4>D2 Coverage % 不是品質指標</h4>
+  <p data-zh="教學中常以「Coverage &gt; 80%」作為 PR 通過標準。Coverage.py 官方文件明確指出：高覆蓋率<strong>只代表程式碼被執行過</strong>，不代表 assertion 真的測到了預期行為。例如 <code>def f(x): return x; test: assert f(1) is not None</code> 有 100% coverage 但測得無物。應搭配 mutation testing（如 <code>mutmut</code>）或同行 PR review 衡量測試品質。" data-en="Coverage &gt; 80% as a PR gate is a common rule. But the Coverage.py docs explicitly warn: high coverage only proves code was executed, not that assertions captured intended behavior. <code>def f(x): return x; assert f(1) is not None</code> reaches 100% while testing nothing. Pair coverage with mutation testing (e.g. <code>mutmut</code>) or PR review for meaningful quality signals.">教學中常以「Coverage &gt; 80%」作為 PR 通過標準。Coverage.py 官方文件明確指出：高覆蓋率<strong>只代表程式碼被執行過</strong>，不代表 assertion 真的測到了預期行為。例如 <code>def f(x): return x; test: assert f(1) is not None</code> 有 100% coverage 但測得無物。應搭配 mutation testing（如 <code>mutmut</code>）或同行 PR review 衡量測試品質。</p>
+  <p>來源：<a href="https://coverage.readthedocs.io/en/latest/faq.html" target="_blank" rel="noopener">Coverage.py FAQ</a>。</p>
+</div>
+
+<div class="errata">
+  <h4>D3 uv / Poetry / pip：lockfile 與 build backend 易混淆</h4>
+  <p data-zh="2024 後的 Python 打包工具同時扮演「dependency resolver」與「build backend」兩個角色，但兩者其實獨立：<code>uv</code> 與 <code>poetry</code> 都是 resolver；build backend 則是 <code>hatchling</code>、<code>setuptools</code>、<code>poetry-core</code>、<code>maturin</code>（Rust）等。實務上 <code>uv lock</code> 產生 <code>uv.lock</code>，但 <code>pyproject.toml</code> 內仍須宣告 <code>[build-system] build-backend = ...</code>。混用最常見問題：用 <code>uv</code> 管 deps 但 build backend 是 setuptools.legacy，造成 sdist 缺檔。" data-en="Modern Python tools act as both dependency resolvers and build backends, but the two roles are independent: <code>uv</code> and <code>poetry</code> are resolvers, while <code>hatchling</code>, <code>setuptools</code>, <code>poetry-core</code>, <code>maturin</code> are backends. <code>uv lock</code> writes <code>uv.lock</code> but <code>pyproject.toml</code> still needs <code>[build-system] build-backend</code>. The most common pitfall: managing deps with uv but using legacy setuptools as backend, leading to incomplete sdists.">2024 後的 Python 打包工具同時扮演「dependency resolver」與「build backend」兩個角色，但兩者其實獨立：<code>uv</code> 與 <code>poetry</code> 都是 resolver；build backend 則是 <code>hatchling</code>、<code>setuptools</code>、<code>poetry-core</code>、<code>maturin</code>（Rust）等。實務上 <code>uv lock</code> 產生 <code>uv.lock</code>，但 <code>pyproject.toml</code> 內仍須宣告 <code>[build-system] build-backend = ...</code>。混用最常見問題：用 <code>uv</code> 管 deps 但 build backend 是 setuptools.legacy，造成 sdist 缺檔。</p>
+  <p>來源：<a href="https://packaging.python.org/en/latest/discussions/setup-py-deprecated/" target="_blank" rel="noopener">PyPA — setup.py deprecation</a>、<a href="https://docs.astral.sh/uv/concepts/projects/" target="_blank" rel="noopener">uv project concepts</a>。</p>
+</div>
+
+<div class="errata">
+  <h4>E1 Docker on HPC：Apptainer 不是 1:1 替代</h4>
+  <p data-zh="HPC cluster 多用 Apptainer/Singularity 取代 Docker，常以為兩者執行模型相同。事實上：(1) Apptainer 預設 <strong>image 是 read-only</strong>，<code>--writable</code> 才能寫入；(2) <code>$HOME</code>、<code>/tmp</code>、CWD 預設自動 bind mount，不像 Docker 預設隔離；(3) network 預設使用 host network；(4) 不支援 Docker compose。在 HPC 上跑 Snakemake / Nextflow 時要記得 mount 點與 Dockerfile <code>USER</code> 指令的差異。" data-en="HPC clusters often replace Docker with Apptainer/Singularity, but the execution model differs: (1) Apptainer images are <strong>read-only by default</strong>; (2) <code>$HOME</code>, <code>/tmp</code>, CWD are auto-bound (Docker isolates them); (3) host network by default; (4) no docker-compose. When porting Snakemake/Nextflow workflows, audit bind mounts and Dockerfile <code>USER</code> directives.">HPC cluster 多用 Apptainer/Singularity 取代 Docker，常以為兩者執行模型相同。事實上：(1) Apptainer 預設 <strong>image 是 read-only</strong>；(2) <code>$HOME</code>、<code>/tmp</code>、CWD 預設自動 bind mount，不像 Docker 預設隔離；(3) network 預設使用 host network；(4) 不支援 Docker compose。在 HPC 上跑 Snakemake / Nextflow 時要記得 mount 點與 Dockerfile <code>USER</code> 指令的差異。</p>
+  <p>來源：<a href="https://apptainer.org/docs/user/main/docker_and_oci.html" target="_blank" rel="noopener">Apptainer — Docker compatibility</a>。</p>
+</div>
+
+<div class="errata">
+  <h4>E2 Snakemake vs Nextflow：選擇取決於團隊，非效能</h4>
+  <p data-zh="Wratten et al. 2021 Nat Methods 對 5 大 workflow manager 的 benchmark 中，<strong>runtime 差距 &lt; 5%</strong>，效能並非選擇依據。實際決策因素為：(1) Snakemake 語法接近 Python，適合 Python 為主的 lab；(2) Nextflow 採 DSL2 + Groovy，nf-core 提供 80+ 預打包 pipeline，適合臨床 NGS 環境；(3) WDL + Cromwell 是 Terra / DNAnexus 生態系預設選擇。請依團隊既有技能與生態系選擇，而非單純看 benchmark 數字。" data-en="Wratten et al. 2021 Nat Methods benchmarked five workflow managers and found <strong>&lt; 5% runtime difference</strong> — performance is not a decision criterion. The real factors: (1) Snakemake's Python-like syntax fits Python-first labs; (2) Nextflow DSL2 + Groovy with 80+ pre-packaged nf-core pipelines suits clinical NGS; (3) WDL + Cromwell is the default in Terra / DNAnexus ecosystems. Choose by team skills and ecosystem, not benchmark numbers.">Wratten et al. 2021 Nat Methods 對 5 大 workflow manager 的 benchmark 中，<strong>runtime 差距 &lt; 5%</strong>，效能並非選擇依據。實際決策因素為：(1) Snakemake 語法接近 Python，適合 Python 為主的 lab；(2) Nextflow 採 DSL2 + Groovy，nf-core 提供 80+ 預打包 pipeline，適合臨床 NGS 環境；(3) WDL + Cromwell 是 Terra / DNAnexus 生態系預設選擇。請依團隊既有技能與生態系選擇，而非單純看 benchmark 數字。</p>
+  <p>來源：<a href="https://doi.org/10.1038/s41592-021-01254-9" target="_blank" rel="noopener">Wratten et al. 2021 Nat Methods</a>。</p>
+</div>
+
+<div class="errata">
+  <h4>E4 FAIR 不等於 open</h4>
+  <p data-zh="FAIR 原則（Findable / Accessible / Interoperable / Reusable）<strong>並未要求資料公開</strong>。一份內部基因體資料只要有 persistent identifier、metadata schema 與授權聲明，即可 FAIR-compliant 而仍保持 controlled access。臨床資料的 IRB / GDPR 限制與 FAIR 不衝突。對外引用 FAIR 時應避免「FAIR = open data」的誤解。" data-en="FAIR (Findable / Accessible / Interoperable / Reusable) does NOT require open access. An internal genomic dataset with a persistent ID, metadata schema, and license can be FAIR-compliant while remaining controlled-access — IRB / GDPR constraints don't conflict with FAIR. Avoid the common misconception that 'FAIR = open data'.">FAIR 原則（Findable / Accessible / Interoperable / Reusable）<strong>並未要求資料公開</strong>。一份內部基因體資料只要有 persistent identifier、metadata schema 與授權聲明，即可 FAIR-compliant 而仍保持 controlled access。臨床資料的 IRB / GDPR 限制與 FAIR 不衝突。對外引用 FAIR 時應避免「FAIR = open data」的誤解。</p>
+  <p>來源：<a href="https://www.go-fair.org/fair-principles/" target="_blank" rel="noopener">GO FAIR — FAIR Principles</a>；<a href="https://doi.org/10.1038/sdata.2016.18" target="_blank" rel="noopener">Wilkinson et al. 2016</a>。</p>
+</div>
+</section>
+
+<!-- ===================== Footnote ===================== -->
+<section class="section">
+<div class="callout tip">
+<span class="callout-icon">📖</span>
+<div>
+<strong data-zh="查找指南：" data-en="How to find a paper:">查找指南：</strong>
+<span data-zh="所有 DOI 連結指向出版社頁面。若需下載 PDF，可搭配 " data-en="DOI links point to publisher pages. For free PDFs, try ">所有 DOI 連結指向出版社頁面。若需下載 PDF，可搭配 </span>
+<a href="https://pubmed.ncbi.nlm.nih.gov/" target="_blank" rel="noopener">PubMed</a>、
+<a href="https://www.ncbi.nlm.nih.gov/pmc/" target="_blank" rel="noopener">PMC</a>、
+<a href="https://arxiv.org/" target="_blank" rel="noopener">arXiv</a>、
+<a href="https://www.biorxiv.org/" target="_blank" rel="noopener">bioRxiv</a>
+<span data-zh=" 找開放近用版本。" data-en=" for open-access versions."> 找開放近用版本。</span>
+</div>
+</div>
+</section>
+
+<nav class="page-nav">
+  <a href="../index.html"><span class="nav-dir" data-zh="← 教學首頁" data-en="← Tutorial home">← 教學首頁</span><span class="nav-title" data-zh="回到 20 主題教學" data-en="Back to 20-topic tutorial">回到 20 主題教學</span></a>
+  <a href="../adv-bioinfo-prog-quiz/index.html"><span class="nav-dir" data-zh="互動考題 →" data-en="Interactive quiz →">互動考題 →</span><span class="nav-title" data-zh="Advanced Bioinformatics Programming Quiz" data-en="Advanced Bioinformatics Programming Quiz">Advanced Bioinformatics Programming Quiz</span></a>
+</nav>
+</main>
+
+<footer class="site-footer" style="text-align:center;color:var(--c-ink-muted);padding:20px;font-size:.85rem;border-top:1px solid var(--c-border-light);margin-top:40px">
+  © Charlene · Advanced Bioinformatics Programming Interactive Tutorial — References<br>
+  <span data-zh="收錄 130+ 篇學術論文、官方文件與工具網站連結 · 最後更新 2026-05" data-en="130+ papers, official docs and tool links · Last updated 2026-05">收錄 130+ 篇學術論文、官方文件與工具網站連結 · 最後更新 2026-05</span>
+</footer>
+
+<script src="../i18n.js"></script>
+</body>
+</html>
