@@ -6,7 +6,7 @@
  */
 (function(){
   const SK = 'advprog_quiz_lang';
-  let lang = localStorage.getItem(SK) || 'zh';
+  let lang = localStorage.getItem(SK) || 'en';
 
   // UI string dictionary used by JS dynamic rendering
   const STR = {
