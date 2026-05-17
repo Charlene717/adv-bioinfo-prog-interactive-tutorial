@@ -1,0 +1,601 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>E1: 容器化 (Docker / Apptainer) · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="big-data-tables.html">BigData</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="package-development.html">Package</a></li>
+    <li><a href="docker-containers.html" class="active">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK E · TOPIC 17 / 20</div>
+<h1 data-zh="容器化：Docker / Apptainer 之於生醫資訊" data-en="Containerization: Docker / Apptainer for Bioinformatics">容器化：Docker / Apptainer 之於生醫資訊</h1>
+<p class="subtitle" data-lang="zh">把「我電腦上能跑」變成「任何電腦都能跑、五年後還能跑」——image vs container、多階段建構、BioContainers、Apptainer for HPC、安全與快取。</p>
+<p class="subtitle" data-lang="en">Turn "works on my machine" into "works anywhere, still works in five years" — images vs containers, multi-stage builds, BioContainers, Apptainer on HPC, security & caching.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼生醫資訊離不開容器？" data-en="Why bioinformatics depends on containers">為什麼生醫資訊離不開容器？</h2>
+<div data-lang="zh">
+<p>一個典型 scRNA-seq pipeline 串接 <code>fastqc → STAR → samtools → cellranger → scanpy → scvi-tools</code>——每個工具有自己的 C 函式庫、Python 版本、R 套件需求。Conda 可以管套件，但無法管 glibc 版本、kernel 模組、CUDA 驅動。容器把「OS 之上的一切」都包進去，達成三件事：</p>
+<ul>
+<li><strong>環境鎖定：</strong>image hash (SHA-256) 唯一對應一份完整環境，五年後 <code>docker pull biocontainers/samtools:1.18</code> 仍取得同一個二進位。</li>
+<li><strong>跨平台：</strong>你的 Mac、同事的 Linux 工作站、AWS 上的 EC2、HPC 的 SLURM node——同一 image 跑同一行為。</li>
+<li><strong>權限分離：</strong>容器內看不到 host 的 <code>/home</code>，誤刪 <code>rm -rf</code> 也不會傷到 host filesystem。</li>
+</ul>
+<p>本章涵蓋 Docker（單機/雲端標準）、Apptainer（HPC 標準，前身 Singularity）、BioContainers（Bioconda 自動產出的官方 image registry）、與 Snakemake/Nextflow 的整合。</p>
+</div>
+<div data-lang="en">
+<p>A typical scRNA-seq pipeline chains <code>fastqc → STAR → samtools → cellranger → scanpy → scvi-tools</code> — each tool has its own C libraries, Python version, R-package needs. Conda manages packages but cannot manage glibc, kernel modules, CUDA drivers. Containers package "everything above the OS," giving you three wins:</p>
+<ul>
+<li><strong>Frozen environments:</strong> An image hash (SHA-256) uniquely identifies a full environment; five years later <code>docker pull biocontainers/samtools:1.18</code> still yields the same binaries.</li>
+<li><strong>Cross-platform:</strong> Your Mac, a colleague's Linux box, an AWS EC2, an HPC SLURM node — same image, same behavior.</li>
+<li><strong>Isolation:</strong> A container cannot see host's <code>/home</code>; an accidental <code>rm -rf</code> never harms the host filesystem.</li>
+</ul>
+<p>This chapter covers Docker (single-machine/cloud standard), Apptainer (HPC standard, formerly Singularity), BioContainers (Bioconda-auto-built image registry), and integration with Snakemake/Nextflow.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>關鍵概念：</strong>「image」是不可變的快照（像光碟），「container」是執行中的 image 實例（像光碟在 player 裡）。一份 image 可以同時跑出 N 個 container。</span>
+<span data-lang="en"><strong>Key concept:</strong> An <strong>image</strong> is an immutable snapshot (like a CD-ROM); a <strong>container</strong> is a running instance of that image (the CD in a player). One image → many concurrent containers.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Dockerfile fundamentals ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Dockerfile 核心指令" data-en="I. Dockerfile core instructions">一、Dockerfile 核心指令</h2>
+<div data-lang="zh"><p>Dockerfile 是文字檔，每一行是一個 layer。BuildKit 會 cache 每個 layer——只要該行以上沒改，就能命中 cache 大幅加速 rebuild。指令順序原則：<strong>變動最少的指令放最上面</strong>（base image、apt 套件），常變動的放下面（COPY source、ENTRYPOINT）。</p></div>
+<div data-lang="en"><p>A Dockerfile is plain text where each line becomes a layer. BuildKit caches each layer — as long as everything above is unchanged, the cache hits and rebuilds become fast. Ordering rule: <strong>least-changing instructions on top</strong> (base image, apt packages), most-changing at the bottom (COPY source, ENTRYPOINT).</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">Dockerfile</button>
+<button class="code-tab-btn">.dockerignore</button>
+<button class="code-tab-btn">build.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">Dockerfile — bioinformatics CLI</span><pre><span class="comment"># syntax=docker/dockerfile:1.7</span>
+<span class="kw">FROM</span> python:3.12-slim AS base
+
+<span class="comment"># 1) System libs — rarely change, stays cached</span>
+<span class="kw">RUN</span> apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
+      build-essential libhts-dev samtools bcftools tabix \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*
+
+<span class="comment"># 2) Python deps — re-runs only if requirements.txt changes</span>
+<span class="kw">WORKDIR</span> /app
+<span class="kw">COPY</span> requirements.txt .
+<span class="kw">RUN</span> pip install --no-cache-dir -r requirements.txt
+
+<span class="comment"># 3) App code — changes most often, last</span>
+<span class="kw">COPY</span> src/ ./src/
+<span class="kw">COPY</span> bin/ ./bin/
+
+<span class="comment"># 4) Non-root user (security best practice)</span>
+<span class="kw">RUN</span> useradd -m -u 1000 biouser
+<span class="kw">USER</span> biouser
+
+<span class="kw">ENV</span> PYTHONUNBUFFERED=1 \
+    PATH=/app/bin:$PATH
+
+<span class="comment"># ENTRYPOINT = always-run binary; CMD = default args (overridable)</span>
+<span class="kw">ENTRYPOINT</span> [<span class="str">"python"</span>, <span class="str">"-m"</span>, <span class="str">"variant_qc"</span>]
+<span class="kw">CMD</span> [<span class="str">"--help"</span>]
+</pre></div>
+<div class="code-tab-content"><span class="filename">.dockerignore — exclude from build context</span><pre><span class="comment"># Don't ship test data, caches, secrets into the image</span>
+.git
+.venv
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+node_modules/
+data/raw/
+*.bam
+*.fastq.gz
+.env
+.env.*
+notebooks/scratch/
+</pre></div>
+<div class="code-tab-content"><span class="filename">build.sh — with BuildKit cache mount</span><pre><span class="comment">#!/bin/bash
+# BuildKit cache speeds up pip / apt by sharing cache across builds</span>
+export DOCKER_BUILDKIT=1
+
+docker build \
+  --cache-from=type=registry,ref=ghcr.io/lab/variant-qc:buildcache \
+  --cache-to=type=registry,ref=ghcr.io/lab/variant-qc:buildcache,mode=max \
+  -t ghcr.io/lab/variant-qc:1.2.0 \
+  -t ghcr.io/lab/variant-qc:latest \
+  .
+
+docker push ghcr.io/lab/variant-qc:1.2.0
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>ENTRYPOINT vs CMD：</strong>ENTRYPOINT 是「永遠執行的指令」，CMD 是「可被 <code>docker run image arg</code> 覆寫的預設參數」。錯把所有東西塞進 CMD，使用者就無法乾淨地傳入自己的引數。</span>
+<span data-lang="en"><strong>ENTRYPOINT vs CMD:</strong> ENTRYPOINT is "always runs"; CMD is "default args, overridable by <code>docker run image arg</code>." Putting everything in CMD prevents users from cleanly passing their own arguments.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: Multi-stage builds ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、多階段建構 (multi-stage) — 縮小 image" data-en="II. Multi-stage builds — shrink the final image">二、多階段建構 (multi-stage) — 縮小 image</h2>
+<div data-lang="zh">
+<p>編譯 <code>htslib</code>、<code>bwa</code> 需要 GCC、make、autoconf——這些工具加起來 500MB+。但 runtime 只需要編譯出的二進位。多階段建構讓你「在 builder 階段裝編譯工具，最後階段只拷貝產物」，把 image 從 1.5GB 砍到 200MB。</p>
+</div>
+<div data-lang="en">
+<p>Compiling <code>htslib</code>, <code>bwa</code> needs GCC, make, autoconf — those alone add 500MB+. But runtime only needs the compiled binaries. Multi-stage builds let you "install build tools in a builder stage, copy only artifacts to a final stage," shrinking the image from 1.5GB to 200MB.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">Dockerfile.multi</button>
+<button class="code-tab-btn">size_compare</button>
+</div>
+<div class="code-tab-content active"><span class="filename">Dockerfile.multi — two stages</span><pre><span class="comment"># ===== STAGE 1: builder (has compilers) =====</span>
+<span class="kw">FROM</span> ubuntu:22.04 AS builder
+
+<span class="kw">RUN</span> apt-get update &amp;&amp; apt-get install -y \
+      build-essential autoconf wget zlib1g-dev libbz2-dev \
+      liblzma-dev libcurl4-openssl-dev libssl-dev
+
+<span class="kw">WORKDIR</span> /build
+<span class="kw">RUN</span> wget https://github.com/samtools/samtools/releases/download/1.18/samtools-1.18.tar.bz2 \
+    &amp;&amp; tar xjf samtools-1.18.tar.bz2 \
+    &amp;&amp; cd samtools-1.18 \
+    &amp;&amp; ./configure --prefix=/install \
+    &amp;&amp; make -j$(nproc) install
+
+<span class="comment"># ===== STAGE 2: runtime (no compilers) =====</span>
+<span class="kw">FROM</span> ubuntu:22.04 AS runtime
+
+<span class="kw">RUN</span> apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
+      zlib1g libbz2-1.0 liblzma5 libcurl4 libssl3 \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*
+
+<span class="comment"># Copy ONLY the compiled binary, leave compilers behind</span>
+<span class="kw">COPY</span> --from=builder /install /usr/local
+
+<span class="kw">RUN</span> useradd -m biouser
+<span class="kw">USER</span> biouser
+<span class="kw">ENTRYPOINT</span> [<span class="str">"samtools"</span>]
+</pre></div>
+<div class="code-tab-content"><span class="filename">size_compare.txt</span><pre><span class="comment"># Single-stage build with compilers retained:</span>
+$ docker images variant-qc:single
+REPOSITORY    TAG    IMAGE ID     SIZE
+variant-qc    single 7a3f...      1.52 GB
+
+<span class="comment"># Multi-stage build:</span>
+$ docker images variant-qc:multi
+REPOSITORY    TAG    IMAGE ID     SIZE
+variant-qc    multi  9c2e...      218 MB
+
+<span class="comment"># 7× smaller → faster push/pull, smaller attack surface</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: Bioinformatics-specific images ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、生醫資訊專用 base images" data-en="III. Bioinformatics-specific base images">三、生醫資訊專用 base images</h2>
+<div data-lang="zh">
+<p>不要從零開始！社群已經提供了優化過的 base image。挑對 base 可以省下幾百行 Dockerfile。</p>
+</div>
+<div data-lang="en">
+<p>Don't start from scratch! The community ships optimized base images. Picking the right one saves hundreds of Dockerfile lines.</p>
+</div>
+
+<div class="card-grid">
+<div class="card"><h4>rocker/r-ver</h4>
+<p data-lang="zh">R 官方推薦的版本鎖定 image。子家族包含 rocker/rstudio、rocker/tidyverse、rocker/verse (含 LaTeX)。</p>
+<p data-lang="en">Officially-recommended R version-pinned images. Sub-family: rocker/rstudio, rocker/tidyverse, rocker/verse (with LaTeX).</p>
+<pre style="margin-top:.6rem"><span class="kw">FROM</span> rocker/r-ver:4.4.1</pre></div>
+
+<div class="card"><h4>bioconductor/bioconductor_docker</h4>
+<p data-lang="zh">官方 Bioconductor image，預裝 BiocManager 與所有系統依賴（libxml2, libssl, libcurl…）。</p>
+<p data-lang="en">Official Bioconductor image, with BiocManager and all system deps pre-installed (libxml2, libssl, libcurl…).</p>
+<pre style="margin-top:.6rem"><span class="kw">FROM</span> bioconductor/bioconductor_docker:RELEASE_3_19</pre></div>
+
+<div class="card"><h4>mambaorg/micromamba</h4>
+<p data-lang="zh">10MB 起跳的超輕量 micromamba，支援快速 conda env 安裝。最適合 Snakemake/Nextflow 任務容器。</p>
+<p data-lang="en">10MB ultra-light micromamba, fast conda env install. Best for Snakemake/Nextflow per-task containers.</p>
+<pre style="margin-top:.6rem"><span class="kw">FROM</span> mambaorg/micromamba:1.5.8</pre></div>
+
+<div class="card"><h4>biocontainers / quay.io</h4>
+<p data-lang="zh">每一個 Bioconda package 自動建出對應 docker image，hash 對應確切版本。例：<code>quay.io/biocontainers/samtools:1.18--h50ea8bc_1</code>。</p>
+<p data-lang="en">Every Bioconda package auto-built as a docker image, hash maps to exact version. e.g. <code>quay.io/biocontainers/samtools:1.18--h50ea8bc_1</code>.</p>
+</div>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">micromamba.Dockerfile</button>
+<button class="code-tab-btn">bioconductor.Dockerfile</button>
+</div>
+<div class="code-tab-content active"><span class="filename">Dockerfile — micromamba + scanpy</span><pre><span class="kw">FROM</span> mambaorg/micromamba:1.5.8
+
+<span class="kw">COPY</span> --chown=$MAMBA_USER:$MAMBA_USER environment.yml /tmp/env.yml
+<span class="kw">RUN</span> micromamba install -y -n base -f /tmp/env.yml \
+    &amp;&amp; micromamba clean --all --yes
+
+<span class="comment"># Make subsequent RUN/CMD pick up the env</span>
+<span class="kw">ARG</span> MAMBA_DOCKERFILE_ACTIVATE=1
+
+<span class="kw">COPY</span> --chown=$MAMBA_USER:$MAMBA_USER src/ /app/src/
+<span class="kw">WORKDIR</span> /app
+<span class="kw">ENTRYPOINT</span> [<span class="str">"python"</span>, <span class="str">"-m"</span>, <span class="str">"src.pipeline"</span>]
+
+<span class="comment"># environment.yml:
+# channels: [conda-forge, bioconda]
+# dependencies: [python=3.11, scanpy=1.10, scvi-tools=1.1, anndata=0.10]</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">Dockerfile — Bioconductor + DESeq2</span><pre><span class="kw">FROM</span> bioconductor/bioconductor_docker:RELEASE_3_19
+
+<span class="kw">RUN</span> R -e <span class="str">'BiocManager::install(c("DESeq2", "limma", "edgeR", "ComplexHeatmap"), ask = FALSE)'</span>
+
+<span class="kw">COPY</span> scripts/ /opt/scripts/
+<span class="kw">ENTRYPOINT</span> [<span class="str">"Rscript"</span>, <span class="str">"/opt/scripts/run_de.R"</span>]
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: Apptainer / HPC ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="四、Apptainer (Singularity) — HPC 上的選擇" data-en="IV. Apptainer (Singularity) — the HPC choice">四、Apptainer (Singularity) — HPC 上的選擇</h2>
+<div data-lang="zh">
+<p>大學 HPC 幾乎不開放 Docker（Docker daemon 以 root 執行，是 multi-user 集群的安全噩夢）。Apptainer（2021 從 Singularity 改名）解決這個問題：</p>
+<ul>
+<li><strong>無 daemon：</strong>每個 user 各自啟動 container，root 權限不外漏。</li>
+<li><strong>單檔 image：</strong>SIF 檔（Singularity Image Format）可以放在 NFS、Lustre 上分享。</li>
+<li><strong>相容 Docker：</strong>直接 <code>apptainer pull docker://biocontainers/samtools:1.18</code> 轉換現有 Docker image。</li>
+<li><strong>自動掛載 $HOME：</strong>container 內可直接讀寫 host 的 home，與 Docker 預設行為相反。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p>University HPCs rarely allow Docker (the daemon runs as root — a multi-user nightmare). Apptainer (renamed from Singularity in 2021) fixes this:</p>
+<ul>
+<li><strong>No daemon:</strong> Each user runs their own container; no root leak.</li>
+<li><strong>Single-file image:</strong> SIF (Singularity Image Format) can sit on NFS/Lustre and be shared.</li>
+<li><strong>Docker-compatible:</strong> <code>apptainer pull docker://biocontainers/samtools:1.18</code> converts existing Docker images.</li>
+<li><strong>Auto-mounts $HOME:</strong> Inside the container you can read/write the host home directly — opposite of Docker's default.</li>
+</ul>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">apptainer_basics.sh</button>
+<button class="code-tab-btn">align.def</button>
+<button class="code-tab-btn">slurm_job.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">apptainer_basics.sh</span><pre><span class="comment"># 1. Pull a Docker image as SIF</span>
+apptainer pull docker://quay.io/biocontainers/samtools:1.18--h50ea8bc_1
+<span class="comment"># → produces samtools_1.18--h50ea8bc_1.sif (~30 MB)</span>
+
+<span class="comment"># 2. Run a command inside the container</span>
+apptainer exec samtools_1.18--h50ea8bc_1.sif samtools view -c sample.bam
+
+<span class="comment"># 3. Bind host paths — needed when working files live outside $HOME</span>
+apptainer exec --bind /scratch:/scratch,/projects:/projects \
+    samtools_1.18.sif samtools sort /scratch/sample.bam -o /scratch/sorted.bam
+
+<span class="comment"># 4. Run with no host filesystem leak (more isolated)</span>
+apptainer exec --containall --bind /scratch:/scratch tool.sif my_cmd
+</pre></div>
+<div class="code-tab-content"><span class="filename">align.def — Apptainer recipe (build from scratch)</span><pre><span class="kw">Bootstrap:</span> docker
+<span class="kw">From:</span> ubuntu:22.04
+
+<span class="kw">%post</span>
+    apt-get update &amp;&amp; apt-get install -y bwa samtools
+    rm -rf /var/lib/apt/lists/*
+
+<span class="kw">%environment</span>
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+
+<span class="kw">%runscript</span>
+    exec bwa <span class="str">"$@"</span>
+
+<span class="kw">%labels</span>
+    Author lab@uni.edu
+    Version 1.0
+    Tools bwa samtools
+
+<span class="comment"># Build (needs sudo or --fakeroot):</span>
+<span class="comment"># apptainer build align.sif align.def</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">slurm_job.sh — Apptainer inside SLURM</span><pre><span class="comment">#!/bin/bash
+#SBATCH --job-name=bwa-align
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+#SBATCH --time=04:00:00
+#SBATCH --array=1-100</span>
+
+module load apptainer/1.3.0
+
+SAMPLE=$(sed -n <span class="str">"${SLURM_ARRAY_TASK_ID}p"</span> samples.txt)
+
+apptainer exec --bind /scratch:/scratch \
+    /shared/images/align.sif \
+    bwa mem -t 8 ref.fa \
+        /scratch/$SAMPLE/R1.fq.gz /scratch/$SAMPLE/R2.fq.gz \
+    > /scratch/$SAMPLE/aligned.sam
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: Interactive ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="五、Dockerfile builder — 點選你需要的工具" data-en="V. Dockerfile builder — click to assemble">五、Dockerfile builder — 點選你需要的工具</h2>
+<div data-lang="zh"><p>選一個 base image 與幾個 bioinformatics 工具，下方面板會即時組裝出 Dockerfile。</p></div>
+<div data-lang="en"><p>Pick a base image plus the tools you need; the panel assembles a Dockerfile live.</p></div>
+
+<div class="interactive-panel">
+<h3 data-zh="🛠️ Dockerfile 組裝器" data-en="🛠️ Dockerfile Assembler">🛠️ Dockerfile 組裝器</h3>
+
+<div class="slider-group" style="margin-bottom:.6rem">
+<label data-zh="Base image" data-en="Base image">Base image</label>
+<select id="dkBase" style="padding:.4rem .6rem;border-radius:6px;width:100%;max-width:480px">
+  <option value="rocker">rocker/r-ver:4.4.1 (R)</option>
+  <option value="pyslim" selected>python:3.12-slim (Python)</option>
+  <option value="mamba">mambaorg/micromamba:1.5.8 (Conda)</option>
+  <option value="biocsam">quay.io/biocontainers/samtools:1.18 (BioContainers)</option>
+</select>
+</div>
+
+<div class="slider-group" style="margin-bottom:.6rem">
+<label data-zh="工具 (可複選)" data-en="Tools (multi-select)">工具</label>
+<div id="dkTools" style="display:flex;flex-wrap:wrap;gap:.5rem">
+  <label><input type="checkbox" value="samtools"> samtools</label>
+  <label><input type="checkbox" value="bwa"> bwa</label>
+  <label><input type="checkbox" value="snakemake" checked> snakemake</label>
+  <label><input type="checkbox" value="scanpy" checked> scanpy</label>
+  <label><input type="checkbox" value="seurat"> seurat</label>
+</div>
+</div>
+
+<pre id="dkOut" style="background:#0f1521;color:#e5e7eb;padding:1rem;border-radius:8px;font-size:.85rem;overflow:auto;max-height:380px"></pre>
+</div>
+</section>
+
+<!-- ===== Section 7: Compose, security, scanning ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 5" data-en="TOPIC 5">主題 5</div>
+<h2 data-zh="六、Compose、安全、與漏洞掃描" data-en="VI. Compose, security, vulnerability scanning">六、Compose、安全、與漏洞掃描</h2>
+<div data-lang="zh">
+<p>當你的開發環境要同時跑 PostgreSQL + Redis + Jupyter 三個服務，<code>docker compose</code> 讓你用一個 YAML 同時啟動。Production 與資安實務則要求：(1) 不以 root 跑 container；(2) 唯讀檔案系統；(3) 定期掃描 image 漏洞（trivy）。</p>
+</div>
+<div data-lang="en">
+<p>For dev environments running PostgreSQL + Redis + Jupyter together, <code>docker compose</code> spins them up from one YAML. Production hygiene: (1) don't run as root; (2) read-only filesystem; (3) scan images for CVEs (trivy).</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">docker-compose.yml</button>
+<button class="code-tab-btn">security.Dockerfile</button>
+<button class="code-tab-btn">trivy_scan.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">docker-compose.yml — dev DB + Jupyter</span><pre><span class="kw">version:</span> <span class="str">"3.9"</span>
+<span class="kw">services:</span>
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: genomics
+      POSTGRES_PASSWORD: $DB_PASS
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports: [<span class="str">"5432:5432"</span>]
+
+  jupyter:
+    build: .
+    depends_on: [postgres]
+    environment:
+      DATABASE_URL: postgresql://postgres:$DB_PASS@postgres/genomics
+    volumes:
+      - ./notebooks:/home/jovyan/work
+    ports: [<span class="str">"8888:8888"</span>]
+
+<span class="kw">volumes:</span>
+  pgdata:
+</pre></div>
+<div class="code-tab-content"><span class="filename">security.Dockerfile — hardened</span><pre><span class="kw">FROM</span> python:3.12-slim
+
+<span class="kw">RUN</span> apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
+      samtools &amp;&amp; rm -rf /var/lib/apt/lists/*
+
+<span class="comment"># Create non-root user with fixed UID (matches host UID for bind mounts)</span>
+<span class="kw">RUN</span> groupadd -g 1000 biouser &amp;&amp; useradd -u 1000 -g 1000 -m biouser
+<span class="kw">USER</span> biouser
+<span class="kw">WORKDIR</span> /app
+
+<span class="comment"># Drop privileges further at runtime:
+# docker run --read-only --tmpfs /tmp --cap-drop=ALL --security-opt=no-new-privileges ...</span>
+
+<span class="kw">COPY</span> --chown=biouser:biouser . .
+<span class="kw">ENTRYPOINT</span> [<span class="str">"./bin/run.sh"</span>]
+</pre></div>
+<div class="code-tab-content"><span class="filename">trivy_scan.sh — CVE scan in CI</span><pre><span class="comment"># Install: brew install trivy  /  apt install trivy</span>
+
+<span class="comment"># Scan image for HIGH/CRITICAL CVEs only; fail CI on findings</span>
+trivy image \
+    --severity HIGH,CRITICAL \
+    --exit-code 1 \
+    --ignore-unfixed \
+    ghcr.io/lab/variant-qc:1.2.0
+
+<span class="comment"># Also scan filesystem during build (catches secrets, leaked .env)</span>
+trivy fs --scanners secret,vuln .
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 8: Comparison table ===== -->
+<section class="section">
+<div class="section-label" data-zh="比較" data-en="COMPARE">比較</div>
+<h2 data-zh="七、Registry 與 image runtime 一覽" data-en="VII. Registries & runtimes at a glance">七、Registry 與 image runtime 一覽</h2>
+
+<table class="comp-table"><thead><tr>
+<th>Registry</th>
+<th data-zh="特色" data-en="Highlights">特色</th>
+<th data-zh="生醫資訊用例" data-en="Bio use case">生醫資訊用例</th>
+<th data-zh="收費" data-en="Pricing">收費</th>
+</tr></thead><tbody>
+<tr><td>DockerHub</td><td data-zh="最大公開 registry" data-en="Largest public registry">最大公開 registry</td><td data-zh="官方 base images (python, ubuntu)" data-en="Official base images">官方 base images</td><td data-zh="免費 pull 有限額" data-en="Pull-rate-limited free tier">免費 pull 有限額</td></tr>
+<tr><td>Quay.io</td><td data-zh="BioContainers 主家" data-en="Home of BioContainers">BioContainers 主家</td><td data-zh="每一個 Bioconda package 對應的 image" data-en="Every Bioconda package → image">每個 Bioconda package</td><td data-zh="public 免費" data-en="Free for public">public 免費</td></tr>
+<tr><td>GHCR</td><td data-zh="GitHub Container Registry, 與 repo 權限整合" data-en="Integrated with GitHub repo permissions">與 GitHub 整合</td><td data-zh="lab 內部 image, CI/CD" data-en="Internal lab images, CI/CD">內部 image</td><td data-zh="public 免費, private 計費" data-en="Free public, paid private">public 免費</td></tr>
+<tr><td>ECR / GCR / ACR</td><td data-zh="雲廠商私有 registry" data-en="Cloud-vendor private registries">雲端私有</td><td data-zh="跑在 AWS/GCP/Azure 的 production pipeline" data-en="Production pipelines on AWS/GCP/Azure">production pipeline</td><td data-zh="storage + egress 計費" data-en="storage + egress fees">儲存+流出</td></tr>
+</tbody></table>
+
+<table class="comp-table" style="margin-top:1rem"><thead><tr>
+<th>Runtime</th>
+<th data-zh="需要 root daemon?" data-en="Root daemon?">root daemon?</th>
+<th data-zh="主要部署位置" data-en="Where deployed">部署位置</th>
+<th data-zh="GPU 支援" data-en="GPU">GPU</th>
+</tr></thead><tbody>
+<tr><td>Docker</td><td>✅</td><td data-zh="工作站、雲" data-en="Workstation, cloud">工作站、雲</td><td data-zh="nvidia-container-toolkit" data-en="nvidia-container-toolkit">nvidia-container-toolkit</td></tr>
+<tr><td>Podman</td><td>❌ (rootless)</td><td data-zh="Linux 工作站、CI runner" data-en="Linux workstation, CI runner">工作站、CI</td><td data-zh="✅ (與 Docker 相同)" data-en="✅ (same as Docker)">✅</td></tr>
+<tr><td>Apptainer</td><td>❌</td><td data-zh="HPC / SLURM cluster" data-en="HPC / SLURM cluster">HPC cluster</td><td data-zh="✅ --nv flag" data-en="✅ --nv flag">✅ --nv</td></tr>
+</tbody></table>
+</section>
+
+<!-- ===== Section 9: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪種容器策略？" data-en="Which container strategy?">該用哪種容器策略？</h2>
+
+<div class="decision-tree">
+<h4 data-zh="情境 → 推薦做法" data-en="Situation → Recommendation">情境 → 推薦做法</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我只是想跑 samtools/bwa 一次」</strong> → 直接 <code>apptainer pull docker://biocontainers/...</code> 或 <code>docker run --rm biocontainers/...</code>，不需要自己寫 Dockerfile</span><span data-lang="en"><strong>"I just need samtools/bwa once"</strong> → just <code>apptainer pull docker://biocontainers/...</code> or <code>docker run --rm biocontainers/...</code> — no Dockerfile needed</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我有一個 Python 工具要發布」</strong> → 從 <code>python:3.12-slim</code> 或 <code>mambaorg/micromamba</code> 開始；多階段建構；推到 GHCR</span><span data-lang="en"><strong>"I'm publishing a Python tool"</strong> → start from <code>python:3.12-slim</code> or <code>mambaorg/micromamba</code>; multi-stage; push to GHCR</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我寫的是 R/Bioconductor pipeline」</strong> → <code>bioconductor/bioconductor_docker:RELEASE_3_19</code> 是最安全的 base</span><span data-lang="en"><strong>"I have an R/Bioconductor pipeline"</strong> → <code>bioconductor/bioconductor_docker:RELEASE_3_19</code> is the safest base</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「要在大學 HPC 上跑」</strong> → Apptainer + <code>--bind</code> 掛 scratch / projects</span><span data-lang="en"><strong>"Running on university HPC"</strong> → Apptainer + <code>--bind</code> for scratch / projects</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「要跑 Snakemake/Nextflow」</strong> → 讓 workflow engine 自動 pull 每個 rule/process 的 BioContainer (<code>--use-singularity</code> / <code>docker.enabled = true</code>)</span><span data-lang="en"><strong>"Snakemake/Nextflow"</strong> → let the workflow engine auto-pull per-rule/process BioContainers (<code>--use-singularity</code> / <code>docker.enabled = true</code>)</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「image 已經 1GB+ 太肥」</strong> → 多階段建構 + <code>--no-install-recommends</code> + <code>rm /var/lib/apt/lists/*</code> + slim base</span><span data-lang="en"><strong>"My image is 1GB+ "</strong> → multi-stage build + <code>--no-install-recommends</code> + <code>rm /var/lib/apt/lists/*</code> + slim base</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q1.</strong> 在 Dockerfile 中，<code>COPY requirements.txt .</code> 放在 <code>RUN pip install</code> 之前的主要目的是？</p>
+<p data-lang="en"><strong>Q1.</strong> Why place <code>COPY requirements.txt .</code> before <code>RUN pip install</code> in a Dockerfile?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 因為 pip 需要 requirements.txt 才能執行</span><span data-lang="en">A. pip needs requirements.txt to run</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 利用 layer cache：只要 requirements.txt 不變，pip install 步驟就能 cache 命中，重 build 飛快</span><span data-lang="en">B. Layer caching: as long as requirements.txt is unchanged, pip install hits cache and rebuilds are fast</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 為了安全</span><span data-lang="en">C. For security</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 沒有差別，只是慣例</span><span data-lang="en">D. No difference; just convention</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>把不變的依賴單獨拷貝可以最大化 cache 命中。若一起 <code>COPY . .</code>，任何 source code 改動都會讓 pip install 重跑。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> Copying invariant deps separately maximizes cache hits. If you <code>COPY . .</code>, any source change forces pip install to re-run.</div>
+</div>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q2.</strong> 大學 HPC 通常拒絕安裝 Docker 的主要原因？</p>
+<p data-lang="en"><strong>Q2.</strong> Why do most university HPCs refuse to install Docker?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. Docker 需要付授權費</span><span data-lang="en">A. Docker requires a license fee</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. Docker image 比 Apptainer 大</span><span data-lang="en">B. Docker images are larger than Apptainer's</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. Docker daemon 以 root 執行，使用者可逃逸成 root，多用戶集群安全風險高</span><span data-lang="en">C. The Docker daemon runs as root; users can escalate to root — a security risk on multi-user clusters</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. Docker 不能跑 GPU</span><span data-lang="en">D. Docker cannot use GPUs</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Apptainer 設計時就是為了解決 HPC 環境多用戶共享的 root 風險，所以容器以呼叫者的 UID 執行，不需 daemon。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Apptainer was designed exactly to remove the rooted-daemon risk on shared HPC; containers run as the calling user's UID, no daemon required.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> 下列哪個做法最能把 1.5GB 的 image 砍到 200MB？</p>
+<p data-lang="en"><strong>Q3.</strong> Which is the most effective way to shrink a 1.5GB image to 200MB?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 多階段建構：builder stage 編譯，最後 stage 只 COPY 二進位</span><span data-lang="en">A. Multi-stage build: compile in a builder stage, COPY only binaries to the final stage</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 壓縮成 tar.gz 再發布</span><span data-lang="en">B. Gzip the image before publishing</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 把所有 RUN 合併成一行</span><span data-lang="en">C. Combine all RUN into a single line</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 改用 Apptainer</span><span data-lang="en">D. Switch to Apptainer</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>編譯工具鏈（gcc, make…）通常 500MB+，多階段建構讓它們留在 builder stage 不進最終 image。合併 RUN（C）只能省幾 MB。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> Compiler toolchains (gcc, make…) are usually 500MB+; multi-stage leaves them in the builder. Combining RUN (C) only saves a few MB.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="api-web-services.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Prev">← 上一頁</span><span class="nav-title" data-zh="D4 · API 與 Web 服務" data-en="D4 · APIs & Web Services">D4 · API 與 Web 服務</span></a>
+<a href="workflow-engines.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="E2 · 工作流引擎" data-en="E2 · Workflow Engines">E2 · 工作流引擎</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · E1 容器化</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Interactive: Dockerfile assembler
+const BASES = {
+  rocker: {from:'rocker/r-ver:4.4.1', pkg:'apt', user:'rstudio'},
+  pyslim: {from:'python:3.12-slim', pkg:'apt', user:'biouser'},
+  mamba:  {from:'mambaorg/micromamba:1.5.8', pkg:'mamba', user:'mambauser'},
+  biocsam:{from:'quay.io/biocontainers/samtools:1.18--h50ea8bc_1', pkg:'none', user:'biouser'}
+};
+const TOOL_INSTALL = {
+  apt: {
+    samtools:'samtools', bwa:'bwa',
+    snakemake:'snakemake', scanpy:'python3-pip && pip install scanpy',
+    seurat:"R -e 'install.packages(\"Seurat\")'"
+  },
+  mamba: {
+    samtools:'samtools', bwa:'bwa', snakemake:'snakemake-minimal',
+    scanpy:'scanpy', seurat:'r-seurat'
+  }
+};
+function buildDockerfile(){
+  const base = BASES[document.getElementById('dkBase').value];
+  const tools = [...document.querySelectorAll('#dkTools input:checked')].map(i=>i.value);
+  let s = `# syntax=docker/dockerfile:1.7\nFROM ${base.from}\n\n`;
+  if(tools.length === 0){
+    s += '# (pick at least one tool)\n';
+  } else if (base.pkg === 'apt'){
+    const aptList = tools.filter(t => ['samtools','bwa','snakemake'].includes(t));
+    const pipList = tools.includes('scanpy') ? 'scanpy anndata' : '';
+    const rList = tools.includes('seurat');
+    if(aptList.length){
+      s += `RUN apt-get update && apt-get install -y --no-install-recommends \\\n      ${aptList.join(' ')} \\\n    && rm -rf /var/lib/apt/lists/*\n\n`;
+    }
+    if(pipList){
+      s += `RUN pip install --no-cache-dir ${pipList}\n\n`;
+    }
+    if(rList){
+      s += `RUN R -e 'install.packages("Seurat", repos="https://cloud.r-project.org")'\n\n`;
+    }
+  } else if (base.pkg === 'mamba'){
+    const mList = tools.map(t => TOOL_INSTALL.mamba[t]).filter(Boolean);
+    s += `RUN micromamba install -y -n base -c conda-forge -c bioconda \\\n      ${mList.join(' ')} \\\n    && micromamba clean --all --yes\n\nARG MAMBA_DOCKERFILE_ACTIVATE=1\n\n`;
+  } else {
+    s += '# This base image already includes samtools; layer on extras as needed.\n\n';
+  }
+  s += `RUN useradd -m -u 1000 ${base.user} 2>/dev/null || true\nUSER ${base.user}\nWORKDIR /work\n\nENTRYPOINT ["bash"]\n`;
+  document.getElementById('dkOut').textContent = s;
+}
+document.getElementById('dkBase').addEventListener('change', buildDockerfile);
+document.querySelectorAll('#dkTools input').forEach(i => i.addEventListener('change', buildDockerfile));
+buildDockerfile();
+</script>
+</body></html>

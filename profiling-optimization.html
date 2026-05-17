@@ -1,0 +1,453 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>B1: 效能剖析與最佳化 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html" class="active">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK B · TOPIC 5 / 20</div>
+<h1 data-zh="效能剖析與最佳化：先量再改" data-en="Profiling & Optimization: Measure Before You Optimize">效能剖析與最佳化：先量再改</h1>
+<p class="subtitle" data-lang="zh">cProfile、pyinstrument、line_profiler、memory_profiler、py-spy、profvis、bench——用真實資料找出 hot spot，再針對 80/20 那 20% 動手。</p>
+<p class="subtitle" data-lang="en">cProfile, pyinstrument, line_profiler, memory_profiler, py-spy, profvis, bench — find real hot spots on real data, then target the 20% that matters.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why measure first ===== -->
+<section class="section">
+<div class="section-label" data-zh="原則" data-en="PRINCIPLE">原則</div>
+<h2 data-zh="為什麼一定要「先量再改」？" data-en="Why must we measure before optimizing?">為什麼一定要「先量再改」？</h2>
+<div data-lang="zh">
+<p>Donald Knuth 的名言：「Premature optimization is the root of all evil.」生醫程式中最常見的浪費是花三天把一個只佔 0.5% 總時間的迴圈優化成 C 擴充——卻沒注意到 92% 的時間其實花在某次重複的 <code>pd.merge</code>。</p>
+<ul>
+<li><strong>80/20 法則：</strong>絕大多數程式的 80% 時間花在 20% 的程式碼。先用 profiler 抓出那 20%。</li>
+<li><strong>三種瓶頸：</strong>CPU-bound（計算密集）、I/O-bound（讀檔/網路）、Memory-bound（命中 swap 或 OOM）。三者需要不同工具。</li>
+<li><strong>真實資料才準：</strong>用 toy data 跑 profiler 經常誤導——10 個 cell 跟 100 萬個 cell 的瓶頸位置不同。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p>Knuth's famous line: "Premature optimization is the root of all evil." The most common bioinformatics waste is spending three days hand-rolling a C extension for a loop that's 0.5% of runtime — while missing the repeated <code>pd.merge</code> that consumes 92%.</p>
+<ul>
+<li><strong>80/20 rule:</strong> Most programs spend 80% of time in 20% of code. Use a profiler to find that 20%.</li>
+<li><strong>Three bottleneck types:</strong> CPU-bound, I/O-bound, memory-bound (paging / OOM). Each needs different tools.</li>
+<li><strong>Profile on real data:</strong> Toy datasets mislead — the bottleneck for 10 cells differs from 1M cells.</li>
+</ul>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>工作流程：</strong>(1) 用 wall-clock 找出哪一步最慢 → (2) 用 deterministic profiler (cProfile) 或 sampling profiler (pyinstrument / py-spy) 找熱點函式 → (3) 用 line_profiler 鎖定熱點函式內哪幾行最貴 → (4) 動手改 → (5) 再量一次確認真的變快。</span>
+<span data-lang="en"><strong>Workflow:</strong> (1) Wall-clock to find the slowest step → (2) deterministic profiler (cProfile) or sampling profiler (pyinstrument / py-spy) to find hot functions → (3) line_profiler to pinpoint expensive lines inside → (4) optimize → (5) re-measure to confirm.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Python profilers ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Python 剖析工具一覽" data-en="I. The Python Profiler Toolbox">一、Python 剖析工具一覽</h2>
+<div data-lang="zh"><p>四個層次：函式級時間（cProfile / pyinstrument）、行級時間（line_profiler）、記憶體（memory_profiler / tracemalloc）、production 採樣（py-spy）。生醫工作流幾乎一定會用到前三個。</p></div>
+<div data-lang="en"><p>Four levels: function-level time (cProfile / pyinstrument), line-level time (line_profiler), memory (memory_profiler / tracemalloc), production sampling (py-spy). Bioinformatics workflows almost always touch the first three.</p></div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="工具" data-en="Tool">工具</th>
+<th data-zh="類型" data-en="Type">類型</th>
+<th data-zh="overhead" data-en="Overhead">overhead</th>
+<th data-zh="輸出" data-en="Output">輸出</th>
+<th data-zh="最佳用途" data-en="Best for">最佳用途</th>
+</tr></thead><tbody>
+<tr><td><code>cProfile</code></td><td data-zh="確定性 (每次呼叫都記)" data-en="Deterministic">確定性</td><td>10–30%</td><td>.prof / snakeviz</td><td data-zh="精確函式呼叫次數" data-en="Exact call counts">精確函式呼叫次數</td></tr>
+<tr><td><code>pyinstrument</code></td><td data-zh="採樣 (每 1ms)" data-en="Sampling (1ms)">採樣</td><td>&lt;5%</td><td data-zh="樹狀文字 / HTML" data-en="Tree text / HTML">樹狀文字</td><td data-zh="快速找熱點，CI-friendly" data-en="Quick hot-spot, CI-friendly">快速找熱點</td></tr>
+<tr><td><code>line_profiler</code></td><td data-zh="行級確定性" data-en="Line-level deterministic">行級確定性</td><td data-zh="可達 10×" data-en="Up to 10×">可達 10×</td><td data-zh="每行時間" data-en="Per-line time">每行時間</td><td data-zh="鎖定熱點函式內最貴的那幾行" data-en="Find expensive lines in hot fns">鎖定最貴行</td></tr>
+<tr><td><code>memory_profiler</code></td><td data-zh="行級記憶體" data-en="Line-level memory">行級記憶體</td><td data-zh="高 (5–20×)" data-en="High (5–20×)">高</td><td data-zh="每行 RAM" data-en="Per-line RAM">每行 RAM</td><td data-zh="抓記憶體尖峰位置" data-en="Catch peak RAM line">記憶體尖峰</td></tr>
+<tr><td><code>tracemalloc</code></td><td data-zh="stdlib，追蹤分配" data-en="Stdlib, allocation tracking">stdlib</td><td data-zh="中 (2–3×)" data-en="Medium (2–3×)">中</td><td data-zh="snapshot diff" data-en="Snapshot diff">snapshot diff</td><td data-zh="尋找 memory leak" data-en="Find leaks">找洩漏</td></tr>
+<tr><td><code>py-spy</code></td><td data-zh="外部採樣 (無侵入)" data-en="External sampling (no patch)">外部採樣</td><td>&lt;1%</td><td data-zh="flamegraph SVG" data-en="Flamegraph SVG">flamegraph</td><td data-zh="正在跑的 production process" data-en="Live production process">正在跑的 process</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">cprofile.py</button>
+<button class="code-tab-btn">pyinstrument.sh</button>
+<button class="code-tab-btn">line_profiler.py</button>
+<button class="code-tab-btn">pyspy.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">cprofile.py — built-in deterministic profiler</span><pre><span class="kw">import</span> cProfile, pstats
+<span class="kw">from</span> pstats <span class="kw">import</span> SortKey
+
+<span class="kw">def</span> <span class="func">main</span>():
+    adata = sc.read_h5ad(<span class="str">"pbmc_3k.h5ad"</span>)
+    sc.pp.normalize_total(adata)
+    sc.pp.log1p(adata)
+    sc.pp.highly_variable_genes(adata, n_top_genes=<span class="num">2000</span>)
+    sc.pp.pca(adata, n_comps=<span class="num">50</span>)
+    sc.pp.neighbors(adata)
+    sc.tl.leiden(adata)
+
+<span class="comment"># Run with profiling</span>
+cProfile.run(<span class="str">"main()"</span>, <span class="str">"pipeline.prof"</span>)
+
+<span class="comment"># Inspect top 15 cumulative-time functions</span>
+p = pstats.Stats(<span class="str">"pipeline.prof"</span>)
+p.sort_stats(SortKey.CUMULATIVE).print_stats(<span class="num">15</span>)
+
+<span class="comment"># Visualize:</span>
+<span class="comment">#   pip install snakeviz</span>
+<span class="comment">#   snakeviz pipeline.prof</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">pyinstrument.sh — sampling profiler, low overhead</span><pre><span class="comment"># Install: pip install pyinstrument</span>
+
+<span class="comment"># Profile a script and get a tree report</span>
+pyinstrument my_pipeline.py
+
+<span class="comment"># HTML output (great for sharing in PRs)</span>
+pyinstrument -r html -o profile.html my_pipeline.py
+
+<span class="comment"># Inline in code (specific block)</span>
+<span class="kw">from</span> pyinstrument <span class="kw">import</span> Profiler
+profiler = Profiler()
+profiler.start()
+<span class="comment"># ... heavy work ...</span>
+profiler.stop()
+<span class="func">print</span>(profiler.output_text(unicode=<span class="kw">True</span>, color=<span class="kw">True</span>))
+</pre></div>
+<div class="code-tab-content"><span class="filename">line_profiler.py — per-line timing of hot fns</span><pre><span class="comment"># pip install line_profiler</span>
+<span class="comment"># Add @profile to functions you want to inspect (no import needed)</span>
+
+<span class="kw">@</span><span class="func">profile</span>
+<span class="kw">def</span> <span class="func">compute_qc_metrics</span>(adata):
+    adata.var[<span class="str">"mt"</span>] = adata.var_names.str.startswith(<span class="str">"MT-"</span>)        <span class="comment"># 0.1%</span>
+    sc.pp.calculate_qc_metrics(adata, qc_vars=[<span class="str">"mt"</span>], inplace=<span class="kw">True</span>) <span class="comment"># 78%  ← hot</span>
+    adata = adata[adata.obs.pct_counts_mt &lt; <span class="num">15</span>].copy()           <span class="comment"># 21%  ← copy() expensive</span>
+    <span class="kw">return</span> adata
+
+<span class="comment"># Run:</span>
+<span class="comment">#   kernprof -lv my_script.py</span>
+<span class="comment"># Output shows time/hits per line; you'd then attack the 78% line.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">pyspy.sh — production sampling (no code change)</span><pre><span class="comment"># Install: pip install py-spy (or cargo install py-spy)</span>
+
+<span class="comment"># Attach to a running PID, dump flamegraph after 60s</span>
+py-spy record -o flame.svg --duration <span class="num">60</span> --pid <span class="num">12345</span>
+
+<span class="comment"># Live "top"-like view of a running process</span>
+py-spy top --pid <span class="num">12345</span>
+
+<span class="comment"># Inside a Docker container (need --cap-add SYS_PTRACE)</span>
+docker run --cap-add SYS_PTRACE my-pipeline py-spy record -o /out/flame.svg -- python run.py
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>採樣 vs 確定性的差異：</strong>cProfile 記下每次呼叫，對呼叫頻繁的小函式會放大 overhead；pyinstrument/py-spy 每 1–10ms 抓一次 stack，overhead 低但會漏掉 &lt; 1ms 的快函式。短熱點用 cProfile，長 pipeline 用 pyinstrument。</span>
+<span data-lang="en"><strong>Sampling vs deterministic:</strong> cProfile records every call — overhead balloons for tiny frequently-called functions. pyinstrument / py-spy sample every 1–10ms — low overhead but miss sub-millisecond functions. Use cProfile for short hot spots, pyinstrument for long pipelines.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: Memory profiling ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、記憶體剖析：抓 OOM 與洩漏" data-en="II. Memory Profiling: Catching OOM and Leaks">二、記憶體剖析：抓 OOM 與洩漏</h2>
+<div data-lang="zh"><p>scRNA-seq、整段基因組 VCF 都是 RAM hog。<code>memory_profiler</code> 給每行記憶體變化；<code>tracemalloc</code>（stdlib）做 snapshot diff 找洩漏；<code>psutil</code> 監控整個 process。</p></div>
+<div data-lang="en"><p>scRNA-seq and whole-genome VCFs are RAM hogs. <code>memory_profiler</code> shows per-line deltas; <code>tracemalloc</code> (stdlib) takes snapshot diffs to find leaks; <code>psutil</code> tracks whole-process RSS.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">tracemalloc.py</button>
+<button class="code-tab-btn">memprof.py</button>
+<button class="code-tab-btn">psutil.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">tracemalloc.py — find allocation deltas</span><pre><span class="kw">import</span> tracemalloc
+
+tracemalloc.start(<span class="num">25</span>)  <span class="comment"># keep 25-frame stack per allocation</span>
+
+snap1 = tracemalloc.take_snapshot()
+adata = run_pipeline()
+snap2 = tracemalloc.take_snapshot()
+
+<span class="comment"># Top 10 lines that allocated the most NEW memory</span>
+<span class="kw">for</span> stat <span class="kw">in</span> snap2.compare_to(snap1, <span class="str">"lineno"</span>)[:<span class="num">10</span>]:
+    <span class="func">print</span>(stat)
+
+<span class="comment"># Output example:</span>
+<span class="comment">#   anndata/_core/views.py:88: size=412 MB (+412 MB)</span>
+<span class="comment">#   scanpy/preprocessing/_pca.py:172: size=87 MB (+87 MB)</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">memprof.py — per-line RAM</span><pre><span class="comment"># pip install memory_profiler</span>
+
+<span class="kw">@</span><span class="func">profile</span>
+<span class="kw">def</span> <span class="func">build_count_matrix</span>(reads):
+    counts = pd.DataFrame()                <span class="comment"># 0 MB</span>
+    <span class="kw">for</span> r <span class="kw">in</span> reads:                       <span class="comment"># 0 MB</span>
+        row = pd.DataFrame([r.to_dict()])  <span class="comment"># +12 MB</span>
+        counts = pd.concat([counts, row])  <span class="comment"># +2.3 GB ← O(n²) RAM!</span>
+    <span class="kw">return</span> counts
+
+<span class="comment"># Run:  python -m memory_profiler script.py</span>
+<span class="comment"># The fix: build a list of dicts, then DataFrame at the end.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">psutil.py — whole-process monitoring</span><pre><span class="kw">import</span> psutil, os, time, threading
+
+<span class="kw">def</span> <span class="func">memory_watch</span>(interval=<span class="num">1.0</span>):
+    p = psutil.Process(os.getpid())
+    peak = <span class="num">0</span>
+    <span class="kw">def</span> <span class="func">_loop</span>():
+        <span class="kw">nonlocal</span> peak
+        <span class="kw">while True</span>:
+            rss = p.memory_info().rss / <span class="num">1e9</span>
+            peak = <span class="func">max</span>(peak, rss)
+            time.sleep(interval)
+    threading.Thread(target=_loop, daemon=<span class="kw">True</span>).start()
+    <span class="kw">return</span> <span class="kw">lambda</span>: peak
+
+get_peak = memory_watch()
+run_pipeline()
+<span class="func">print</span>(<span class="str">f"Peak RSS: {get_peak():.1f} GB"</span>)
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: R profilers ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、R 的剖析工具" data-en="III. R Profiling Tools">三、R 的剖析工具</h2>
+<div data-lang="zh"><p>R 端三大工具：<code>profvis</code>（互動 flamegraph，Rprof 的視覺化）、<code>bench::mark()</code>（比較多種寫法，回報時間+記憶體+GC）、<code>microbenchmark</code>（單純計時，nano 級）。<code>lobstr::obj_size()</code> 用來看 R 物件真實大小（會展開 promise 與 SEXP overhead）。</p></div>
+<div data-lang="en"><p>Three R tools: <code>profvis</code> (interactive flamegraph wrapping Rprof), <code>bench::mark()</code> (compare implementations with time + memory + GC), <code>microbenchmark</code> (simple nano-second timing). <code>lobstr::obj_size()</code> reports the true size of an R object (unwrapping promises and SEXP overhead).</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">profvis.R</button>
+<button class="code-tab-btn">bench.R</button>
+<button class="code-tab-btn">lobstr.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">profvis.R — interactive flamegraph in RStudio</span><pre>library(profvis)
+
+profvis({
+  seurat &lt;- CreateSeuratObject(counts = mat)
+  seurat &lt;- NormalizeData(seurat)
+  seurat &lt;- FindVariableFeatures(seurat, nfeatures = <span class="num">2000</span>)
+  seurat &lt;- ScaleData(seurat)
+  seurat &lt;- RunPCA(seurat, npcs = <span class="num">30</span>)
+})
+<span class="comment"># Opens a 2-panel viewer:</span>
+<span class="comment">#   - top: time spent per source-line (with stack)</span>
+<span class="comment">#   - bottom: flamegraph; click any frame to jump to source</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">bench.R — compare implementations with mem + GC</span><pre>library(bench)
+library(data.table)
+
+mat &lt;- matrix(rnorm(<span class="num">1e6</span>), <span class="num">1000</span>, <span class="num">1000</span>)
+
+bench::mark(
+  base   = colSums(mat),
+  matrix = .colSums(mat, nrow(mat), ncol(mat)),
+  apply  = apply(mat, <span class="num">2</span>, sum),
+  check  = TRUE,
+  iterations = <span class="num">50</span>
+)
+<span class="comment"># # A tibble: 3 × 6</span>
+<span class="comment">#   expression      min    median  mem_alloc  n_gc</span>
+<span class="comment">#   base         1.8ms     2.0ms        8KB     0</span>
+<span class="comment">#   matrix       1.5ms     1.7ms      0.1KB     0</span>
+<span class="comment">#   apply        45ms      52ms       16MB     3   ← 25× slower + GC</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">lobstr.R — true object size</span><pre>library(lobstr)
+
+<span class="comment"># object.size() lies for shared objects; obj_size accounts for sharing</span>
+x &lt;- <span class="num">1</span>:<span class="num">1e6</span>
+y &lt;- list(x, x, x)
+object.size(y)   <span class="comment"># 24,000,200 bytes (3 × x — wrong)</span>
+obj_size(y)      <span class="comment"># 4,000,104 bytes  (1 × x — correct)</span>
+
+<span class="comment"># Compare base data.frame vs data.table vs tibble</span>
+df &lt;- data.frame(a = <span class="num">1</span>:<span class="num">1e6</span>, b = rnorm(<span class="num">1e6</span>))
+dt &lt;- data.table::as.data.table(df)
+tb &lt;- tibble::as_tibble(df)
+obj_sizes(df, dt, tb)
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>R 的 copy-on-modify 陷阱：</strong>修改 list 中的一個元素其實會複製整個 list；給 data.frame 加一欄會複製整個 data.frame。<code>tracemem(x)</code> 可印出每次複製的位置，<code>data.table</code> 的 <code>:=</code> 才是真正的 in-place 寫入。</span>
+<span data-lang="en"><strong>R copy-on-modify gotcha:</strong> Modifying one element of a list copies the entire list; adding a column to a data.frame copies the whole data.frame. <code>tracemem(x)</code> prints every copy event; only <code>data.table</code>'s <code>:=</code> is truly in-place.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 5: Flame graph interactive ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="四、讀懂 flame graph" data-en="IV. Reading a Flame Graph">四、讀懂 flame graph</h2>
+<div data-lang="zh">
+<p>Flame graph 的橫軸是「相對時間佔比」（不是時間順序），縱軸是 call stack 深度。<strong>找寬的、不找高的</strong>——寬代表花的時間多。下方互動圖可切換 hot levels 看你會先優化哪一層。</p>
+</div>
+<div data-lang="en">
+<p>In a flame graph the x-axis is <strong>relative time</strong> (not timeline order) and the y-axis is call-stack depth. <strong>Look wide, not tall</strong> — width = time. Toggle hot levels below to see which layer you'd attack first.</p>
+</div>
+
+<div class="interactive-panel">
+<h3 data-zh="🔥 Flame Graph 視覺化" data-en="🔥 Flame Graph Visualizer">🔥 Flame Graph Visualizer</h3>
+<p data-lang="zh" style="font-size:.92rem">點選方塊查看相對佔比；勾選層級可隱藏該層以下，模擬「優化掉這條 branch」。</p>
+<p data-lang="en" style="font-size:.92rem">Click a bar for its share; toggle a level to hide what's beneath, simulating "optimizing away that branch."</p>
+<div id="flameGraph" style="display:flex;flex-direction:column;gap:4px;margin:1rem 0;font-family:monospace;font-size:.85rem;"></div>
+<div id="flameInfo" class="sim-stats">
+  <span class="sim-stat info" id="flameClicked" data-zh="點一個方塊看細節" data-en="Click a bar for details">點一個方塊看細節</span>
+  <span class="sim-stat pass" id="flameRemain">100% remaining</span>
+</div>
+<div style="margin-top:.6rem;display:flex;gap:.6rem;flex-wrap:wrap;">
+  <label><input type="checkbox" id="hideL3" checked> <span data-zh="顯示第 3 層 (numpy 內部)" data-en="Show level 3 (numpy internals)">L3</span></label>
+  <label><input type="checkbox" id="hideL4" checked> <span data-zh="顯示第 4 層 (BLAS)" data-en="Show level 4 (BLAS)">L4</span></label>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 6: Bioinformatics anti-patterns ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="五、生醫程式三大反模式" data-en="V. Three Bioinformatics Anti-Patterns">五、生醫程式三大反模式</h2>
+<div data-lang="zh"><p>下方三段示意是真實 PR review 中最常見的「跑很慢的元兇」：</p></div>
+<div data-lang="en"><p>The three classes below are the most common "why is this so slow?" findings in real PR reviews:</p></div>
+
+<div class="card-grid">
+<div class="card">
+<div class="card-title" data-zh="① DataFrame.append in loop" data-en="① DataFrame.append in loop">① DataFrame.append in loop</div>
+<div class="card-body" data-lang="zh">每次 <code>pd.concat</code> 都複製整張表 → O(n²)。一萬列要 30 秒，十萬列要 50 分鐘。<br><strong>修正：</strong>累積成 <code>list[dict]</code>，最後一次 <code>pd.DataFrame(rows)</code>。Pandas 2.0 已將 <code>DataFrame.append</code> 移除。</div>
+<div class="card-body" data-lang="en">Every <code>pd.concat</code> copies the whole frame → O(n²). 10K rows: 30s; 100K: 50 minutes. <br><strong>Fix:</strong> Accumulate <code>list[dict]</code>, build <code>pd.DataFrame(rows)</code> once. Pandas 2.0 removed <code>DataFrame.append</code>.</div>
+</div>
+<div class="card">
+<div class="card-title" data-zh="② R 中 for-loop 改寫 data.frame 欄" data-en="② Growing R data.frame in a loop">② R 中 for-loop 改寫 data.frame 欄</div>
+<div class="card-body" data-lang="zh"><code>df$new &lt;- f(df$x)</code> 在 loop 中會反覆 copy-on-modify。一千次迴圈可能浪費幾 GB。<br><strong>修正：</strong>vectorize（一次處理整欄）；不得已就用 <code>data.table</code> 的 <code>:=</code>。</div>
+<div class="card-body" data-lang="en"><code>df$new &lt;- f(df$x)</code> in a loop forces repeated copy-on-modify; 1K iterations can waste several GB. <br><strong>Fix:</strong> Vectorize (whole-column at once); fallback to <code>data.table</code>'s <code>:=</code>.</div>
+</div>
+<div class="card">
+<div class="card-title" data-zh="③ 字串相加組 FASTA" data-en="③ String concat for FASTA">③ 字串相加組 FASTA</div>
+<div class="card-body" data-lang="zh"><code>s = s + line</code> 在 Python 中是 O(n²)（CPython 偶有優化但別賴）。<br><strong>修正：</strong>用 <code>list.append</code>，最後 <code>"".join(parts)</code>；或直接 <code>file.write(line)</code> 串流寫出。</div>
+<div class="card-body" data-lang="en"><code>s = s + line</code> in Python is O(n²) (CPython sometimes optimizes — don't rely on it). <br><strong>Fix:</strong> Use <code>list.append</code> then <code>"".join(parts)</code>; or stream <code>file.write(line)</code> directly.</div>
+</div>
+</div>
+
+<div class="callout danger"><span class="callout-icon">🚫</span><div>
+<span data-lang="zh"><strong>Big-O 提醒：</strong>scRNA-seq 動輒幾百萬細胞 × 兩萬基因。O(n²) 演算法在這規模等同永遠跑不完。優化前先在腦中算一次：「如果 n 變 10 倍，這函式會慢幾倍？」</span>
+<span data-lang="en"><strong>Big-O reminder:</strong> scRNA-seq is millions of cells × tens of thousands of genes. An O(n²) algorithm at this scale effectively never finishes. Before optimizing, ask: "If n grows 10×, how much slower does this get?"</span>
+</div></div>
+</section>
+
+<!-- ===== Section 7: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個 profiler？" data-en="Which profiler should I reach for?">該用哪個 profiler？</h2>
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我只想知道哪個函式最慢」</strong> → <code>pyinstrument</code> (Py) / <code>profvis</code> (R)</span><span data-lang="en"><strong>"I just want the slowest function"</strong> → <code>pyinstrument</code> (Py) / <code>profvis</code> (R)</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我已知哪個函式慢，要看裡面哪幾行」</strong> → <code>line_profiler</code></span><span data-lang="en"><strong>"I know the function — which lines inside?"</strong> → <code>line_profiler</code></span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我的 process OOM 了」</strong> → <code>tracemalloc</code> snapshot diff / <code>memory_profiler</code></span><span data-lang="en"><strong>"My process OOM'd"</strong> → <code>tracemalloc</code> diff / <code>memory_profiler</code></span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「Production 上的 daemon 卡住，不能改程式碼」</strong> → <code>py-spy --pid</code></span><span data-lang="en"><strong>"Production daemon is stuck, can't touch code"</strong> → <code>py-spy --pid</code></span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我想比較三種寫法」</strong> → <code>bench::mark</code> (R) / <code>timeit</code> 或 <code>perfplot</code> (Py)</span><span data-lang="en"><strong>"Compare three implementations"</strong> → <code>bench::mark</code> (R) / <code>timeit</code> or <code>perfplot</code> (Py)</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「R 中物件到底多大」</strong> → <code>lobstr::obj_size()</code> (跨 promise/共享真正準)</span><span data-lang="en"><strong>"How big is this R object really?"</strong> → <code>lobstr::obj_size()</code> (handles sharing)</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> 你的 pipeline 跑 8 小時，flame graph 顯示 <code>pd.concat</code> 佔 65%、<code>sklearn.PCA</code> 佔 12%、<code>plt.savefig</code> 佔 0.4%。應先優化哪個？</p>
+<p data-lang="en"><strong>Q1.</strong> An 8-hour pipeline. Flame graph says <code>pd.concat</code> = 65%, <code>sklearn.PCA</code> = 12%, <code>plt.savefig</code> = 0.4%. Which to optimize first?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 三個都要優化才公平</span><span data-lang="en">A. Optimize all three equally</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 從最簡單的 plt.savefig 開始建立信心</span><span data-lang="en">B. Start with the easy one, plt.savefig</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 先攻 pd.concat（佔 65%，潛在加速最大）</span><span data-lang="en">C. Attack pd.concat first (65% — biggest payoff)</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 改用更快的 sklearn 版本</span><span data-lang="en">D. Upgrade sklearn for faster PCA</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>80/20 法則：先打最寬的那一塊。即使把 PCA 變零秒，總時間也只省 12%；把 65% 砍半，全 pipeline 縮 32%。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> 80/20 — go for the widest bar. Cutting PCA to zero saves only 12%; halving the 65% saves 32% of total runtime.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 在迴圈中持續 <code>df = pd.concat([df, new_row])</code>，10 萬列耗時 50 分鐘。為何如此慢？</p>
+<p data-lang="en"><strong>Q2.</strong> Repeatedly <code>df = pd.concat([df, new_row])</code> in a loop — 100K rows takes 50 minutes. Why?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. pandas 沒裝最新版</span><span data-lang="en">A. Pandas isn't on the latest version</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 每次 concat 都複製整張 DataFrame，總成本 O(n²)</span><span data-lang="en">B. Each concat copies the whole DataFrame — total cost O(n²)</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. Python GIL 在 loop 中拖慢</span><span data-lang="en">C. Python GIL slows the loop</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 應該改用 NumPy array</span><span data-lang="en">D. Should switch to NumPy arrays</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>Pandas 為了保持 contiguous memory，每次 concat 都會配置新陣列並複製舊資料。第 k 次成本 ≈ k，總和 ≈ n²。改用 <code>list.append</code> 累積 dict、最後一次建表，成本變 O(n)。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> Pandas keeps memory contiguous, so each concat allocates a new array and copies. The k-th concat costs ≈ k, total ≈ n². Collect dicts in a list and build the DataFrame once → O(n).</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> 哪個工具最適合「附加到正在 production 跑的 Python process，找出它為什麼卡住，且不能停掉它」？</p>
+<p data-lang="en"><strong>Q3.</strong> Best tool for "attach to a running production Python process, see why it's stuck, without stopping it"?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. <code>py-spy record --pid</code></span><span data-lang="en">A. <code>py-spy record --pid</code></span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. <code>cProfile.run()</code></span><span data-lang="en">B. <code>cProfile.run()</code></span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. <code>line_profiler</code></span><span data-lang="en">C. <code>line_profiler</code></span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. <code>tracemalloc</code></span><span data-lang="en">D. <code>tracemalloc</code></span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>py-spy 是 sampling profiler，靠 ptrace 從外部讀 stack，<strong>不需要修改也不需重啟</strong>目標程式，overhead &lt;1%，是 production 首選。其他三個都得改 code 或重跑。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> py-spy is a sampling profiler that reads stacks via ptrace — <strong>no code change, no restart</strong>, &lt;1% overhead. The others all require code modification or a fresh run.</div>
+</div>
+
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="error-handling-logging.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Prev">← 上一頁</span><span class="nav-title" data-zh="A4 · 錯誤處理與 Logging" data-en="A4 · Errors & Logging">A4 · 錯誤處理與 Logging</span></a>
+<a href="compiled-acceleration.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="B2 · 向量化與編譯加速" data-en="B2 · Vectorization & Compiled Speedup">B2 · 向量化與編譯加速</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · B1 效能剖析與最佳化</footer>
+
+<script src="i18n.js"></script>
+<script>
+// ===== Interactive: Flame Graph Visualizer =====
+const flameData = [
+  { name: "main()",                 width: 100, level: 0, color: "#888" },
+  { name: "scanpy.pp.pca",          width: 62,  level: 1, color: "#e67e22" },
+  { name: "  numpy.linalg.svd",     width: 55,  level: 2, color: "#d35400" },
+  { name: "    LAPACK gesdd",       width: 50,  level: 3, color: "#c0392b" },
+  { name: "      BLAS dgemm",       width: 38,  level: 4, color: "#a93226" },
+  { name: "scanpy.pp.neighbors",    width: 21,  level: 1, color: "#27ae60" },
+  { name: "  pynndescent.search",   width: 18,  level: 2, color: "#1e8449" },
+  { name: "scanpy.tl.leiden",       width: 12,  level: 1, color: "#2980b9" },
+  { name: "io / read_h5ad",         width: 5,   level: 1, color: "#7f8c8d" }
+];
+
+function renderFlame(){
+  const hideL3 = !document.getElementById('hideL3').checked;
+  const hideL4 = !document.getElementById('hideL4').checked;
+  const container = document.getElementById('flameGraph');
+  container.innerHTML = '';
+  let remaining = 100;
+  flameData.forEach((f, i) => {
+    if (hideL3 && f.level >= 3) return;
+    if (hideL4 && f.level >= 4) return;
+    const bar = document.createElement('div');
+    bar.style.cssText = `display:inline-block;background:${f.color};color:white;padding:6px 10px;border-radius:4px;width:${f.width}%;margin-left:${f.level*8}px;cursor:pointer;border:1px solid rgba(0,0,0,0.2);`;
+    bar.textContent = `${f.name}  (${f.width}%)`;
+    bar.onclick = () => {
+      document.getElementById('flameClicked').textContent = `${f.name}: ${f.width}% of runtime, depth ${f.level}`;
+      const saved = (f.width * 0.5).toFixed(1);
+      document.getElementById('flameRemain').textContent = `Halving this saves ~${saved}% of total time`;
+    };
+    container.appendChild(bar);
+  });
+}
+document.getElementById('hideL3').addEventListener('change', renderFlame);
+document.getElementById('hideL4').addEventListener('change', renderFlame);
+renderFlame();
+</script>
+</body></html>

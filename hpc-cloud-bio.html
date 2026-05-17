@@ -1,0 +1,407 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>E3: HPC 與雲端 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="big-data-tables.html">BigData</a></li>
+    <li><a href="git-collaboration.html">Git</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="package-development.html">Pkg</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+    <li><a href="hpc-cloud-bio.html" class="active">HPC</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK E · TOPIC 19 / 20</div>
+<h1 data-zh="HPC 與雲端：把分析推上叢集與雲" data-en="HPC & Cloud: Pushing analyses to clusters and cloud">HPC 與雲端：把分析推上叢集與雲</h1>
+<p class="subtitle" data-lang="zh">當你的分析從「我的工作站」成長到「1000 個樣本、需要 200 顆 CPU」，HPC 與雲端是必經之路。本章涵蓋 SLURM、AWS Batch、GCP、Terra，以及為什麼成本可以差 10 倍。</p>
+<p class="subtitle" data-lang="en">When analyses outgrow your workstation — 1000 samples needing 200 CPUs — HPC and cloud become inevitable. This chapter covers SLURM, AWS Batch, GCP, Terra, and why costs can differ by 10×.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1 ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="HPC vs 雲端：何時用哪個？" data-en="HPC vs Cloud: When to use which?">HPC vs 雲端：何時用哪個？</h2>
+<div data-lang="zh">
+<p>機構級 HPC (大學 / 醫院 / 研究所) 通常已有 SLURM 叢集——對於大多數研究專案，HPC 是 <strong>最便宜</strong> (對使用者免費或低成本) 且 <strong>最快上手</strong> 的選擇。但 HPC 有兩個限制：</p>
+<ul>
+<li><strong>排隊時間</strong>：高負載時 job 可能排隊 12-48 小時。</li>
+<li><strong>固定配額</strong>：機構配額用完就必須等。</li>
+</ul>
+<p>雲端 (AWS / GCP / Azure) 適合：突發大量運算 (burst)、機構沒有 HPC、需要 GPU / 特殊硬體、與外部協作者共享環境、需要 <strong>絕對的彈性</strong> (按秒計費)。但雲端有兩大坑：<strong>egress 費</strong> (從雲端下載資料貴) 與 <strong>storage 累積</strong> (S3 月費)。</p>
+</div>
+<div data-lang="en">
+<p>Institutional HPC (universities, hospitals, research institutes) usually have SLURM clusters — for most research projects, HPC is the <strong>cheapest</strong> (free or low-cost to users) and <strong>fastest to start</strong>. But HPC has two limits:</p>
+<ul>
+<li><strong>Queue time</strong>: jobs may wait 12-48h under heavy load.</li>
+<li><strong>Fixed quota</strong>: once your allocation runs out, you wait.</li>
+</ul>
+<p>Cloud (AWS/GCP/Azure) fits: burst-scale compute, institutions without HPC, GPU/specialty hardware needs, external collaborators, <strong>true elasticity</strong> (per-second billing). Two main traps: <strong>egress fees</strong> (downloading from cloud is expensive) and <strong>storage creep</strong> (S3 monthly bills).</p>
+</div>
+</section>
+
+<!-- ===== Section 2: SLURM ===== -->
+<section class="section">
+<div class="section-label" data-zh="HPC" data-en="HPC">HPC</div>
+<h2 data-zh="SLURM 必備 — 提交、監控、debug" data-en="SLURM essentials — submit, monitor, debug">SLURM 必備 — 提交、監控、debug</h2>
+<div data-lang="zh"><p>SLURM (Simple Linux Utility for Resource Management) 是 HPC 最廣用的排程器。掌握 5 個指令就能應付 80% 場景：<code>sbatch</code> (提交)、<code>squeue</code> (排隊狀態)、<code>scancel</code> (取消)、<code>sacct</code> (歷史 / 帳務)、<code>sinfo</code> (節點資源)。</p></div>
+<div data-lang="en"><p>SLURM (Simple Linux Utility for Resource Management) is the most widely used HPC scheduler. Five commands cover 80% of cases: <code>sbatch</code> (submit), <code>squeue</code> (queue), <code>scancel</code> (cancel), <code>sacct</code> (history/accounting), <code>sinfo</code> (node info).</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">job.sbatch</button>
+<button class="code-tab-btn">array.sbatch</button>
+<button class="code-tab-btn">monitor.sh</button>
+<button class="code-tab-btn">gpu.sbatch</button>
+</div>
+<div class="code-tab-content active"><span class="filename">job.sbatch — single job</span><pre><span class="comment">#!/bin/bash</span>
+<span class="comment">#SBATCH --job-name=bwa-align</span>
+<span class="comment">#SBATCH --partition=compute</span>
+<span class="comment">#SBATCH --cpus-per-task=16</span>
+<span class="comment">#SBATCH --mem=32G</span>
+<span class="comment">#SBATCH --time=04:00:00</span>
+<span class="comment">#SBATCH --output=logs/%x-%j.out</span>
+<span class="comment">#SBATCH --error=logs/%x-%j.err</span>
+<span class="comment">#SBATCH --mail-type=END,FAIL</span>
+<span class="comment">#SBATCH --mail-user=user@univ.edu</span>
+
+module load bwa/0.7.17 samtools/1.19
+source ~/miniforge3/etc/profile.d/conda.sh && conda activate align
+
+bwa mem -t $SLURM_CPUS_PER_TASK ref.fa R1.fq.gz R2.fq.gz \
+  | samtools sort -@ $SLURM_CPUS_PER_TASK -o sample.bam -
+</pre></div>
+<div class="code-tab-content"><span class="filename">array.sbatch — 200 samples in one submission</span><pre><span class="comment">#!/bin/bash</span>
+<span class="comment">#SBATCH --array=1-200%50          # 200 tasks, max 50 concurrent</span>
+<span class="comment">#SBATCH --cpus-per-task=8</span>
+<span class="comment">#SBATCH --mem=16G</span>
+<span class="comment">#SBATCH --time=02:00:00</span>
+<span class="comment">#SBATCH --output=logs/%A_%a.out</span>
+
+SAMPLE=$(sed -n <span class="str">"${SLURM_ARRAY_TASK_ID}p"</span> samples.tsv | cut -f1)
+echo <span class="str">"Processing $SAMPLE on $(hostname)"</span>
+fastp -i raw/${SAMPLE}_R1.fq.gz -I raw/${SAMPLE}_R2.fq.gz \
+      -o trim/${SAMPLE}_R1.fq.gz -O trim/${SAMPLE}_R2.fq.gz \
+      -w $SLURM_CPUS_PER_TASK
+</pre></div>
+<div class="code-tab-content"><span class="filename">monitor.sh — daily routine</span><pre><span class="comment"># My jobs right now</span>
+squeue -u $USER
+
+<span class="comment"># Why is my job not running?</span>
+squeue -u $USER -o <span class="str">"%i %P %j %T %R"</span>
+<span class="comment"># R(easons): Priority, Resources, ReqNodeNotAvail, AssocGrpCPULimit</span>
+
+<span class="comment"># Cancel everything</span>
+scancel -u $USER
+
+<span class="comment"># Cancel one job</span>
+scancel 12345678
+
+<span class="comment"># How much CPU / memory did finished jobs use? (key for right-sizing!)</span>
+sacct -j 12345678 --format=JobID,JobName,State,Elapsed,MaxRSS,ReqMem,AllocCPUS
+
+<span class="comment"># Resource info — which partitions / nodes available?</span>
+sinfo -o <span class="str">"%P %a %l %D %C"</span>   <span class="comment"># partition, avail, time, nodes, cpus</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">gpu.sbatch — request GPU node</span><pre><span class="comment">#!/bin/bash</span>
+<span class="comment">#SBATCH --partition=gpu</span>
+<span class="comment">#SBATCH --gres=gpu:a100:1          # one A100</span>
+<span class="comment">#SBATCH --cpus-per-task=8</span>
+<span class="comment">#SBATCH --mem=64G</span>
+<span class="comment">#SBATCH --time=08:00:00</span>
+
+module load cuda/12.4 cudnn/9.0
+source ~/miniforge3/etc/profile.d/conda.sh && conda activate rapids
+
+python train_geneformer.py --batch-size 64 --epochs 20
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>常見錯誤 — over-requesting：</strong>申請 64 CPU / 256 GB 但實際用 4 CPU / 8 GB，會被排程器降低優先序，且浪費機構配額。提交後用 <code>sacct --format=MaxRSS,AllocCPUS,Elapsed</code> 確認真實用量，下次調低申請。</span>
+<span data-lang="en"><strong>Common mistake — over-requesting:</strong> Asking for 64 CPU / 256 GB but using only 4 / 8 GB lowers your scheduling priority and wastes institutional allocation. Run <code>sacct --format=MaxRSS,AllocCPUS,Elapsed</code> after jobs to right-size next time.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: Cloud platforms ===== -->
+<section class="section">
+<div class="section-label" data-zh="雲端" data-en="CLOUD">雲端</div>
+<h2 data-zh="雲端平台一覽" data-en="Cloud platforms at a glance">雲端平台一覽</h2>
+<table class="comp-table"><thead><tr>
+<th data-zh="平台" data-en="Platform">平台</th>
+<th data-zh="計算服務" data-en="Compute service">計算服務</th>
+<th data-zh="儲存" data-en="Storage">儲存</th>
+<th data-zh="生物學整合" data-en="Bio integration">生物學整合</th>
+<th data-zh="適用情境" data-en="Best for">適用情境</th>
+</tr></thead><tbody>
+<tr><td><strong>AWS</strong></td><td>Batch, EC2, Lambda</td><td>S3, EBS, EFS</td><td data-zh="Open Data on Registry (1000G、GTEx、TCGA)" data-en="Open Data Registry (1000G, GTEx, TCGA)">Open Data Registry</td><td data-zh="最廣的工具生態、最多 bioinformatics 範例" data-en="Widest ecosystem & bio examples">最廣的生態</td></tr>
+<tr><td><strong>GCP</strong></td><td>Batch, Cloud Run, GCE</td><td>GCS</td><td>Google Genomics, Verily</td><td data-zh="BigQuery + 大規模查詢" data-en="BigQuery + large-scale queries">BigQuery 友好</td></tr>
+<tr><td><strong>Azure</strong></td><td>Batch, CycleCloud</td><td>Blob</td><td>Microsoft Genomics</td><td data-zh="醫院 / 製藥既有 Microsoft 合約" data-en="Hospitals/pharma on existing MS contracts">既有 MS 合約</td></tr>
+<tr><td><strong>Terra (Broad)</strong></td><td data-zh="背靠 GCP / Azure" data-en="GCP/Azure-backed">背靠 GCP / Azure</td><td>GCS Buckets</td><td>WDL 原生、AnVIL、TCGA、AoU</td><td data-zh="生物學家友好的 GUI、GATK pipeline 即裝即用" data-en="Bio-friendly GUI, GATK pipelines ready">生物學家友好</td></tr>
+<tr><td><strong>DNAnexus</strong></td><td data-zh="背靠 AWS / Azure" data-en="AWS/Azure-backed">背靠 AWS</td><td data-zh="平台儲存" data-en="Platform storage">平台儲存</td><td data-zh="WDL/Nextflow、UK Biobank RAP" data-en="WDL/Nextflow, UK Biobank RAP">UK Biobank RAP</td><td data-zh="臨床 / 藥廠 / UK Biobank" data-en="Clinical / pharma / UK Biobank">臨床 / 藥廠</td></tr>
+<tr><td><strong>Seqera Tower</strong></td><td data-zh="跨雲 Nextflow 控制台" data-en="Cross-cloud Nextflow control plane">跨雲 Nextflow</td><td data-zh="使用底層雲端" data-en="Uses underlying cloud">使用底層雲端</td><td>nf-core 原生</td><td data-zh="多 pipeline、多雲端監控" data-en="Multi-pipeline, multi-cloud observability">多 pipeline 監控</td></tr>
+</tbody></table>
+</section>
+
+<!-- ===== Section 4: AWS Batch example ===== -->
+<section class="section">
+<div class="section-label" data-zh="實作" data-en="HANDS-ON">實作</div>
+<h2 data-zh="AWS Batch — 突發大量運算" data-en="AWS Batch — burst compute">AWS Batch — 突發大量運算</h2>
+<div data-lang="zh"><p>AWS Batch 把「我要跑 1000 個獨立 job」這件事抽象化：你給它 job definition (Docker image + 指令 + 資源)，它自動開機器 (含 spot 機器)、執行、輸出 log、關機。生物學上常見配置：spot 機器跑 trim/align，on-demand 跑 variant calling (避免被中斷)。</p></div>
+<div data-lang="en"><p>AWS Batch abstracts "run 1000 independent jobs": you provide a job definition (Docker image + command + resources), and it provisions machines (including spot), runs jobs, captures logs, and tears down. Common bio pattern: spot instances for trim/align, on-demand for variant calling (avoid interruption).</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">submit_array.py</button>
+<button class="code-tab-btn">job_def.json</button>
+<button class="code-tab-btn">cost_estimate.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">submit_array.py — fan out 200 samples</span><pre><span class="kw">import</span> boto3, json
+batch = boto3.client(<span class="str">"batch"</span>, region_name=<span class="str">"us-east-1"</span>)
+
+samples = open(<span class="str">"samples.tsv"</span>).read().splitlines()
+
+<span class="kw">for</span> i, sid <span class="kw">in</span> <span class="func">enumerate</span>(samples):
+    resp = batch.submit_job(
+        jobName=<span class="str">f"align-{sid}"</span>,
+        jobQueue=<span class="str">"genomics-spot-queue"</span>,
+        jobDefinition=<span class="str">"bwa-align:5"</span>,
+        containerOverrides={
+            <span class="str">"command"</span>: [<span class="str">"bash"</span>, <span class="str">"/work/align.sh"</span>, sid],
+            <span class="str">"environment"</span>: [{<span class="str">"name"</span>: <span class="str">"SAMPLE"</span>, <span class="str">"value"</span>: sid}],
+            <span class="str">"resourceRequirements"</span>: [
+                {<span class="str">"type"</span>: <span class="str">"VCPU"</span>,   <span class="str">"value"</span>: <span class="str">"16"</span>},
+                {<span class="str">"type"</span>: <span class="str">"MEMORY"</span>, <span class="str">"value"</span>: <span class="str">"32768"</span>},
+            ],
+        },
+        retryStrategy={<span class="str">"attempts"</span>: <span class="num">3</span>},   <span class="comment"># spot may be reclaimed</span>
+    )
+    <span class="func">print</span>(resp[<span class="str">"jobId"</span>], sid)
+</pre></div>
+<div class="code-tab-content"><span class="filename">job_def.json — register once</span><pre>{
+  <span class="str">"jobDefinitionName"</span>: <span class="str">"bwa-align"</span>,
+  <span class="str">"type"</span>: <span class="str">"container"</span>,
+  <span class="str">"containerProperties"</span>: {
+    <span class="str">"image"</span>: <span class="str">"123.dkr.ecr.us-east-1.amazonaws.com/bwa:0.7.17"</span>,
+    <span class="str">"jobRoleArn"</span>: <span class="str">"arn:aws:iam::123:role/BatchJobS3Access"</span>,
+    <span class="str">"mountPoints"</span>: [{<span class="str">"sourceVolume"</span>: <span class="str">"refs"</span>, <span class="str">"containerPath"</span>: <span class="str">"/refs"</span>}],
+    <span class="str">"volumes"</span>: [{<span class="str">"name"</span>: <span class="str">"refs"</span>,
+                  <span class="str">"efsVolumeConfiguration"</span>: {<span class="str">"fileSystemId"</span>: <span class="str">"fs-abc"</span>}}],
+    <span class="str">"resourceRequirements"</span>: [
+      {<span class="str">"type"</span>: <span class="str">"VCPU"</span>,   <span class="str">"value"</span>: <span class="str">"16"</span>},
+      {<span class="str">"type"</span>: <span class="str">"MEMORY"</span>, <span class="str">"value"</span>: <span class="str">"32768"</span>}
+    ]
+  }
+}
+</pre></div>
+<div class="code-tab-content"><span class="filename">cost_estimate.py — back-of-envelope</span><pre><span class="comment"># 1000-sample WGS variant calling, AWS us-east-1, 2026 pricing (approx)</span>
+samples       = <span class="num">1000</span>
+align_h       = <span class="num">2.0</span>    <span class="comment"># bwa-mem2 16 vcpu / 32GB</span>
+call_h        = <span class="num">1.5</span>    <span class="comment"># gatk HaplotypeCaller</span>
+spot_price_h  = <span class="num">0.20</span>   <span class="comment"># c6i.4xlarge spot — varies by region</span>
+on_demand_h   = <span class="num">0.68</span>   <span class="comment"># c6i.4xlarge on-demand</span>
+
+cost_align = samples * align_h * spot_price_h
+cost_call  = samples * call_h  * on_demand_h
+storage    = samples * <span class="num">35</span> * <span class="num">0.023</span>   <span class="comment"># 35GB BAM, S3 $0.023/GB-mo</span>
+egress     = <span class="num">0</span>                       <span class="comment"># keep results in S3 — no download = no egress</span>
+
+<span class="func">print</span>(<span class="str">f"Align (spot): ${cost_align:,.0f}"</span>)
+<span class="func">print</span>(<span class="str">f"Call  (on-demand): ${cost_call:,.0f}"</span>)
+<span class="func">print</span>(<span class="str">f"Storage 1mo: ${storage:,.0f}"</span>)
+<span class="func">print</span>(<span class="str">f"Total: ${cost_align + cost_call + storage:,.0f}"</span>)
+<span class="comment"># Typical: ~$1.7-2.2 per sample for spot-heavy mix.</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: Best practices ===== -->
+<section class="section">
+<div class="section-label" data-zh="實務" data-en="BEST PRACTICES">實務</div>
+<h2 data-zh="生物學家在雲端的 8 大省錢策略" data-en="8 cost-saving strategies for bioinformatics on cloud">生物學家在雲端的 8 大省錢策略</h2>
+<div class="card-grid cols-2">
+<div class="card"><div class="card-icon">💰</div><h4 data-zh="1. 善用 spot / preemptible" data-en="1. Use spot / preemptible">1. 善用 spot / preemptible</h4>
+<div data-lang="zh"><p>spot 機器比 on-demand 便宜 60-90%。對於 idempotent 的 trim / align job 配 retry policy，被中斷就重跑。對 variant calling 等較長 job 用 on-demand。</p></div>
+<div data-lang="en"><p>Spot is 60-90% cheaper than on-demand. Pair with retry policies for idempotent jobs (trim/align). Use on-demand for long-running steps (variant calling).</p></div>
+</div>
+<div class="card"><div class="card-icon">🗺️</div><h4 data-zh="2. 不要 download reference genome" data-en="2. Don't download reference genomes">2. 不要 download reference genome</h4>
+<div data-lang="zh"><p>把 reference (hg38, gencode index, etc.) 放 EFS / shared bucket，所有 worker 從 mount 直讀。避免每個 worker 都從 S3 抓 reference。</p></div>
+<div data-lang="en"><p>Put references (hg38, gencode index, etc.) on EFS or a shared bucket; mount and read in every worker. Avoid each worker pulling references from S3.</p></div>
+</div>
+<div class="card"><div class="card-icon">📤</div><h4 data-zh="3. 在雲端做完才下載" data-en="3. Compute in cloud, download last">3. 在雲端做完才下載</h4>
+<div data-lang="zh"><p>Egress 是 AWS 最大金錢黑洞 ($0.09/GB)。1000 個 BAM (35 TB) 下載要 $3,150。把 BAM 留在 S3，只下載 VCF / report。</p></div>
+<div data-lang="en"><p>Egress is AWS's biggest money trap ($0.09/GB). Downloading 1000 BAMs (35 TB) costs $3,150. Keep BAMs in S3; download only VCFs/reports.</p></div>
+</div>
+<div class="card"><div class="card-icon">🗄️</div><h4 data-zh="4. 分層儲存" data-en="4. Tiered storage">4. 分層儲存</h4>
+<div data-lang="zh"><p>剛產出的 BAM 放 S3 Standard，3 個月後 lifecycle policy 自動移到 S3 IA ($0.0125/GB)，1 年後到 Glacier ($0.004/GB)。</p></div>
+<div data-lang="en"><p>Fresh BAMs in S3 Standard; lifecycle policy auto-moves to S3 IA at 3 months ($0.0125/GB), Glacier at 1 year ($0.004/GB).</p></div>
+</div>
+<div class="card"><div class="card-icon">📦</div><h4 data-zh="5. 用 BioContainers 而非自建" data-en="5. Use BioContainers, don't roll your own">5. 用 BioContainers 而非自建</h4>
+<div data-lang="zh"><p>Quay.io / BioContainers 已有幾乎所有生物學工具的 multi-arch image，省下 build + scan 時間。配合 Snakemake / Nextflow 的 conda+container 整合。</p></div>
+<div data-lang="en"><p>Quay.io / BioContainers ships multi-arch images for nearly every bio tool — saving build + scan time. Pair with Snakemake/Nextflow conda+container integration.</p></div>
+</div>
+<div class="card"><div class="card-icon">📊</div><h4 data-zh="6. 用 Tower / Cromwell UI 觀測" data-en="6. Observe via Tower / Cromwell UI">6. 用 Tower / Cromwell UI 觀測</h4>
+<div data-lang="zh"><p>「黑箱跑了 6 小時」是雲端最貴的事故。Seqera Tower / Cromwell UI 顯示每個 task CPU、RAM、time，方便 right-sizing 與 debug。</p></div>
+<div data-lang="en"><p>"6 hours of black-box running" is the most expensive cloud accident. Seqera Tower / Cromwell UI show CPU/RAM/time per task — essential for right-sizing and debugging.</p></div>
+</div>
+<div class="card"><div class="card-icon">🌐</div><h4 data-zh="7. 善用 Open Data Registry" data-en="7. Use Open Data Registry">7. 善用 Open Data Registry</h4>
+<div data-lang="zh"><p>1000 Genomes、GTEx、TCGA、ENCODE、UK Biobank Open Tier 等公開資料在 AWS Open Data Registry 與 GCP Public Datasets 都有原生 mirror，從同 region 讀取「免費」。</p></div>
+<div data-lang="en"><p>1000 Genomes, GTEx, TCGA, ENCODE, UK Biobank Open Tier are mirrored on AWS Open Data Registry and GCP Public Datasets — reading from the same region is "free."</p></div>
+</div>
+<div class="card"><div class="card-icon">🔐</div><h4 data-zh="8. 預算告警與 tagging" data-en="8. Budget alerts & tagging">8. 預算告警與 tagging</h4>
+<div data-lang="zh"><p>設定每月 budget alert ($X 警示、$2X 切斷)。每個資源用 Tag 標註 project / PI，月底用 Cost Explorer 拆帳避免 "誰在燒錢"。</p></div>
+<div data-lang="en"><p>Set monthly budget alerts ($X warn, $2X hard cap). Tag every resource with project/PI; use Cost Explorer to attribute spend at month-end.</p></div>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 6: Interactive ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="雲端帳單估算器" data-en="Cloud bill estimator">雲端帳單估算器</h2>
+<div class="interactive-panel">
+<p data-lang="zh" style="font-size:.92rem">拖動滑桿估算 1 個月的 AWS 帳單。價格為 us-east-1 2026 約值。</p>
+<p data-lang="en" style="font-size:.92rem">Drag sliders to estimate one month's AWS bill. Prices reflect approximate us-east-1 2026 pricing.</p>
+
+<div class="slider-group"><label><span data-zh="樣本數" data-en="Samples">樣本數</span> <span id="vSamp">200</span></label>
+<input type="range" id="cSamp" min="10" max="5000" value="200" step="10"></div>
+
+<div class="slider-group"><label><span data-zh="每樣本計算時數" data-en="Compute hours/sample">每樣本計算時數</span> <span id="vHr">3</span></label>
+<input type="range" id="cHr" min="0.5" max="20" value="3" step="0.5"></div>
+
+<div class="slider-group"><label><span data-zh="spot 比例 (%)" data-en="Spot ratio (%)">spot 比例 (%)</span> <span id="vSpot">70</span></label>
+<input type="range" id="cSpot" min="0" max="100" value="70" step="5"></div>
+
+<div class="slider-group"><label><span data-zh="每樣本儲存 (GB)" data-en="Storage/sample (GB)">每樣本儲存 (GB)</span> <span id="vStor">35</span></label>
+<input type="range" id="cStor" min="1" max="200" value="35" step="1"></div>
+
+<div class="slider-group"><label><span data-zh="下載量 (GB)" data-en="Download (GB)">下載量 (GB)</span> <span id="vEgr">10</span></label>
+<input type="range" id="cEgr" min="0" max="10000" value="10" step="10"></div>
+
+<div class="sim-stats" style="margin-top:14px">
+<span class="sim-stat info" id="cCompute">— compute</span>
+<span class="sim-stat info" id="cStorage">— storage/mo</span>
+<span class="sim-stat warn" id="cEgress">— egress</span>
+<span class="sim-stat fail" id="cTotal">— total</span>
+</div>
+<p id="cAdvice" style="margin-top:10px;font-size:.86rem;color:var(--c-ink-light)">—</p>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> 你在 AWS S3 存了 1000 個 BAM (共 35 TB) 並打算每天從本地 download 全部分析——這個流程最大的成本問題是？</p>
+<p data-lang="en"><strong>Q1.</strong> You store 1000 BAMs (35 TB) on S3 and plan to download all of them to local for daily analysis — what's the biggest cost problem?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. S3 儲存費用太高</span><span data-lang="en">A. S3 storage is too expensive</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. EC2 不夠快</span><span data-lang="en">B. EC2 isn't fast enough</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. Egress (從 AWS 下載) 費用 ≈ $3,150 (35 TB × $0.09)，遠高於計算與儲存</span><span data-lang="en">C. Egress (download from AWS) ≈ $3,150 (35 TB × $0.09), far higher than compute or storage</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 沒問題</span><span data-lang="en">D. No problem</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Egress 是雲端最大金錢黑洞。應該在雲端 (同 region 的 EC2) 完成分析，只下載小體積的 VCF / report。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Egress is the cloud's biggest money trap. Compute in cloud (same-region EC2), download only small VCFs/reports.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 在 SLURM 提交 array job 200 個樣本但同時只想跑 50 個，正確語法是？</p>
+<p data-lang="en"><strong>Q2.</strong> Submit a SLURM array of 200 samples but cap concurrent runs at 50?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. <code>--array=1-200 --max=50</code></span><span data-lang="en">A. <code>--array=1-200 --max=50</code></span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. <code>--array=1-200%50</code></span><span data-lang="en">B. <code>--array=1-200%50</code></span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. <code>--array=1-50 --ntasks=200</code></span><span data-lang="en">C. <code>--array=1-50 --ntasks=200</code></span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 提交 200 次 sbatch</span><span data-lang="en">D. Run sbatch 200 times</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong><code>%N</code> 是 SLURM array 的並行上限語法。<code>1-200%50</code> 代表 200 個 task 同時最多跑 50 個。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> <code>%N</code> caps concurrent array tasks. <code>1-200%50</code> means 200 tasks, max 50 concurrent.</div>
+</div>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q3.</strong> 下列何者最適合用 AWS Batch 的 spot instance？</p>
+<p data-lang="en"><strong>Q3.</strong> Which is best suited for AWS Batch spot instances?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 24 小時的 long-running GATK joint calling</span><span data-lang="en">A. A 24-hour long-running GATK joint calling</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 必須 ACID 的資料庫</span><span data-lang="en">B. An ACID database</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 2 小時 idempotent 的 trim/align，配 retry policy</span><span data-lang="en">C. A 2-hour idempotent trim/align with retry policy</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 即時面對使用者的 Web 服務</span><span data-lang="en">D. A user-facing live web service</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Spot 可被 AWS 隨時回收，最適合短時、idempotent (可重跑) 的 batch job。配 retry 處理偶發中斷可節省 60-90% 成本。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Spot can be reclaimed anytime — ideal for short, idempotent batch jobs. Retries handle interruptions and save 60-90% cost.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="workflow-engines.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="E2 · 工作流引擎" data-en="E2 · Workflow Engines">E2 · 工作流引擎</span></a>
+<a href="reproducible-science.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="E4 · 可再現研究" data-en="E4 · Reproducible Science">E4 · 可再現研究</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · E3 HPC & Cloud</footer>
+
+<script src="i18n.js"></script>
+<script>
+function updateCost(){
+  const samp = +document.getElementById('cSamp').value;
+  const hr   = +document.getElementById('cHr').value;
+  const spot = +document.getElementById('cSpot').value;
+  const stor = +document.getElementById('cStor').value;
+  const egr  = +document.getElementById('cEgr').value;
+  document.getElementById('vSamp').textContent = samp;
+  document.getElementById('vHr').textContent   = hr;
+  document.getElementById('vSpot').textContent = spot;
+  document.getElementById('vStor').textContent = stor;
+  document.getElementById('vEgr').textContent  = egr;
+
+  // pricing approximations (us-east-1, 2026)
+  const spotH  = 0.22;  // c6i.4xlarge spot
+  const odH    = 0.68;  // c6i.4xlarge on-demand
+  const s3GB   = 0.023; // per GB-mo
+  const egrGB  = 0.09;  // per GB
+
+  const blended = (spot/100)*spotH + (1-spot/100)*odH;
+  const compute = samp * hr * blended;
+  const storage = samp * stor * s3GB;
+  const egress  = egr * egrGB;
+  const total   = compute + storage + egress;
+
+  document.getElementById('cCompute').textContent = `compute: $${compute.toFixed(0)}`;
+  document.getElementById('cStorage').textContent = `storage/mo: $${storage.toFixed(0)}`;
+  document.getElementById('cEgress').textContent  = `egress: $${egress.toFixed(0)}`;
+  document.getElementById('cTotal').textContent   = `total: $${total.toFixed(0)}`;
+
+  const cur = (window.I18n && window.I18n.get && window.I18n.get()) || 'zh';
+  let advice_zh = '', advice_en = '';
+  if(egress > compute){
+    advice_zh = '⚠️ 你的 egress 費比計算費還高——強烈建議在雲端完成分析，僅下載小體積結果。';
+    advice_en = '⚠️ Egress exceeds compute — strongly recommend computing in cloud and downloading only small results.';
+  } else if(spot < 30 && samp > 100){
+    advice_zh = '💡 spot 比例偏低；若 job 可重跑，提高 spot 比例可節省 50-70% 計算費。';
+    advice_en = '💡 Spot ratio is low; if jobs are idempotent, raising it saves 50-70% of compute cost.';
+  } else {
+    advice_zh = '✅ 配置合理。記得設 monthly budget alert + cost-explorer tag 才能持續監控。';
+    advice_en = '✅ Sensible config. Remember to set a monthly budget alert + cost-explorer tags for ongoing monitoring.';
+  }
+  const adv = document.getElementById('cAdvice');
+  adv.dataset.zh = advice_zh; adv.dataset.en = advice_en;
+  adv.textContent = cur==='zh' ? advice_zh : advice_en;
+}
+['cSamp','cHr','cSpot','cStor','cEgr'].forEach(id=>document.getElementById(id).addEventListener('input', updateCost));
+document.addEventListener('langchange', updateCost);
+updateCost();
+</script>
+</body></html>

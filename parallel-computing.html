@@ -1,0 +1,436 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>B3: 平行運算 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html" class="active">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK B · TOPIC 7 / 20</div>
+<h1 data-zh="平行運算：把 1 核變 N 核（但要小心 Amdahl）" data-en="Parallel Computing: One Core to N Cores (Mind Amdahl)">平行運算：把 1 核變 N 核（但要小心 Amdahl）</h1>
+<p class="subtitle" data-lang="zh">GIL、threading vs multiprocessing、joblib、future、furrr、BiocParallel、共享記憶體、Dask——選對工具、避開 pickling 與 fork 地雷。</p>
+<p class="subtitle" data-lang="en">GIL, threading vs multiprocessing, joblib, future, furrr, BiocParallel, shared memory, Dask — pick the right tool and dodge the pickling & fork pitfalls.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: GIL ===== -->
+<section class="section">
+<div class="section-label" data-zh="原理" data-en="WHY">原理</div>
+<h2 data-zh="GIL：為什麼 Python threading 對 CPU 沒幫助" data-en="The GIL: Why Python Threading Doesn't Help CPU Work">GIL：為什麼 Python threading 對 CPU 沒幫助</h2>
+<div data-lang="zh">
+<p>CPython 的 <strong>Global Interpreter Lock (GIL)</strong> 在同一時間只允許一個 Python bytecode instruction 執行。意思是：起 4 個 thread 跑 4 個純 Python 數值迴圈，總時間幾乎不變（甚至更慢，因為要切換）。但 GIL 在進入 <strong>I/O 系統呼叫</strong>（network、disk）或 <strong>NumPy/Numba/C extension</strong> 時會釋放——這時候 threading 才能真正並行。</p>
+<ul>
+<li><strong>I/O bound（網路、檔案）：</strong>用 threading 或 async（見 A1）。</li>
+<li><strong>CPU bound（純 Python 計算）：</strong>用 multiprocessing（每個 process 各有自己的 GIL）。</li>
+<li><strong>CPU bound 但底層是 NumPy/Numba/BLAS：</strong>本身已釋放 GIL，threading 也有效。</li>
+</ul>
+<p>Python 3.13 引入「<strong>no-GIL build (PEP 703)</strong>」，未來 5 年會逐漸主流——但目前主流 wheel 仍預設有 GIL。R 沒有 GIL，但 R 本身 single-threaded（除非用 BLAS 多執行緒或 fork）。</p>
+</div>
+<div data-lang="en">
+<p>CPython's <strong>Global Interpreter Lock</strong> permits only one thread to execute Python bytecode at a time. So 4 threads running 4 pure-Python numeric loops finish in essentially the same wall-clock as 1 thread (often worse, due to context switching). But the GIL is <strong>released</strong> during I/O syscalls (network, disk) and inside NumPy / Numba / C extensions — there, threading truly parallelizes.</p>
+<ul>
+<li><strong>I/O bound (network, files):</strong> use threading or async (see A1).</li>
+<li><strong>CPU bound (pure Python compute):</strong> use multiprocessing — each process has its own GIL.</li>
+<li><strong>CPU bound but NumPy/Numba/BLAS underneath:</strong> GIL is released internally — threading also works.</li>
+</ul>
+<p>Python 3.13 ships an experimental <strong>no-GIL build (PEP 703)</strong>; mainstream over the next 5 years. But today's wheels assume the GIL. R has no GIL but is single-threaded by default (except multi-threaded BLAS and explicit fork).</p>
+</div>
+</section>
+
+<!-- ===== Section 2: Python multiprocessing options ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Python 平行工具一覽" data-en="I. The Python Parallelism Toolbox">一、Python 平行工具一覽</h2>
+<div data-lang="zh"><p>幾乎所有人都應該優先試 <code>concurrent.futures</code>（高階介面）或 <code>joblib</code>（生態系標準）；只有寫底層 framework 才需要直接用 <code>multiprocessing</code>。</p></div>
+<div data-lang="en"><p>Reach for <code>concurrent.futures</code> (high-level) or <code>joblib</code> (ecosystem standard) first; use raw <code>multiprocessing</code> only when writing low-level frameworks.</p></div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="工具" data-en="Tool">工具</th>
+<th data-zh="適用" data-en="Use case">適用</th>
+<th data-zh="優點" data-en="Pros">優點</th>
+<th data-zh="缺點" data-en="Cons">缺點</th>
+</tr></thead><tbody>
+<tr><td><code>threading</code> / <code>ThreadPoolExecutor</code></td><td>I/O bound</td><td data-zh="共享記憶體、輕量" data-en="Shared memory, lightweight">共享記憶體、輕量</td><td data-zh="GIL 卡 CPU 工作" data-en="GIL blocks CPU work">GIL 卡 CPU</td></tr>
+<tr><td><code>multiprocessing</code> / <code>ProcessPoolExecutor</code></td><td>CPU bound</td><td data-zh="真平行、各自 GIL" data-en="True parallel, own GIL each">真平行</td><td data-zh="pickling overhead、啟動慢" data-en="Pickling overhead, slow startup">pickle 開銷</td></tr>
+<tr><td><code>joblib.Parallel</code></td><td data-zh="批次 fan-out (sklearn 風格)" data-en="Batch fan-out (sklearn-style)">批次 fan-out</td><td data-zh="自動 backend、memmap 共享、好除錯" data-en="Auto backend, memmap, easy debug">memmap 共享</td><td data-zh="主要為 batch 設計" data-en="Batch-oriented">主要為 batch</td></tr>
+<tr><td><code>asyncio</code></td><td>I/O bound</td><td data-zh="百萬連線可能" data-en="Scales to millions">擴充佳</td><td data-zh="需 async-aware lib" data-en="Needs async libs">需 async lib</td></tr>
+<tr><td><code>dask.delayed</code> / <code>dask.distributed</code></td><td data-zh="任意 DAG、跨機器" data-en="Arbitrary DAG, multi-node">任意 DAG</td><td data-zh="lazy graph、scheduler" data-en="Lazy graph + scheduler">lazy graph</td><td data-zh="learning curve" data-en="Learning curve">learning curve</td></tr>
+<tr><td><code>mpi4py</code></td><td data-zh="HPC、低 latency" data-en="HPC, low-latency">HPC</td><td data-zh="最高效能、cluster 標準" data-en="Peak perf, cluster std">cluster 標準</td><td data-zh="message-passing 心智模型" data-en="Message-passing mindset">message-passing</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">futures.py</button>
+<button class="code-tab-btn">joblib.py</button>
+<button class="code-tab-btn">shared_mem.py</button>
+<button class="code-tab-btn">dask.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">futures.py — high-level fan-out</span><pre><span class="kw">from</span> concurrent.futures <span class="kw">import</span> ProcessPoolExecutor, as_completed
+<span class="kw">from</span> pathlib <span class="kw">import</span> Path
+
+<span class="kw">def</span> <span class="func">count_reads</span>(bam_path: Path) -&gt; <span class="kw">tuple</span>[str, int]:
+    <span class="kw">import</span> pysam   <span class="comment"># import inside the worker (avoid fork issues)</span>
+    <span class="kw">with</span> pysam.AlignmentFile(bam_path, <span class="str">"rb"</span>) <span class="kw">as</span> bam:
+        <span class="kw">return</span> bam_path.name, bam.count()
+
+bam_files = <span class="func">list</span>(Path(<span class="str">"data"</span>).glob(<span class="str">"*.bam"</span>))
+
+<span class="kw">with</span> ProcessPoolExecutor(max_workers=<span class="num">8</span>) <span class="kw">as</span> ex:
+    futures = {ex.submit(count_reads, p): p <span class="kw">for</span> p <span class="kw">in</span> bam_files}
+    <span class="kw">for</span> fut <span class="kw">in</span> as_completed(futures):
+        name, n = fut.result()
+        <span class="func">print</span>(<span class="str">f"{name}: {n:,} reads"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">joblib.py — sklearn-style Parallel/delayed</span><pre><span class="kw">from</span> joblib <span class="kw">import</span> Parallel, delayed, Memory
+
+<span class="kw">def</span> <span class="func">qc_sample</span>(sample_id: str) -&gt; dict:
+    adata = sc.read_h5ad(<span class="str">f"data/{sample_id}.h5ad"</span>)
+    sc.pp.calculate_qc_metrics(adata, inplace=<span class="kw">True</span>)
+    <span class="kw">return</span> {<span class="str">"id"</span>: sample_id,
+            <span class="str">"n_cells"</span>: adata.n_obs,
+            <span class="str">"median_genes"</span>: adata.obs.n_genes_by_counts.median()}
+
+results = Parallel(n_jobs=-<span class="num">1</span>, backend=<span class="str">"loky"</span>, verbose=<span class="num">10</span>)(
+    delayed(qc_sample)(s) <span class="kw">for</span> s <span class="kw">in</span> sample_ids
+)
+<span class="comment"># Backends: 'loky' (process, default), 'threading' (GIL-free libs),</span>
+<span class="comment">#           'multiprocessing', 'dask' (cluster), 'ray'</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">shared_mem.py — avoid copying big arrays</span><pre><span class="kw">from</span> multiprocessing <span class="kw">import</span> shared_memory
+<span class="kw">from</span> concurrent.futures <span class="kw">import</span> ProcessPoolExecutor
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="comment"># Big expression matrix that we don't want to pickle 8 times</span>
+X = np.load(<span class="str">"expr.npy"</span>)              <span class="comment"># 4 GB</span>
+shm = shared_memory.SharedMemory(create=<span class="kw">True</span>, size=X.nbytes)
+buf = np.ndarray(X.shape, dtype=X.dtype, buffer=shm.buf)
+buf[:] = X[:]
+
+<span class="kw">def</span> <span class="func">worker</span>(name, shape, dtype, row_range):
+    shm_local = shared_memory.SharedMemory(name=name)
+    arr = np.ndarray(shape, dtype=dtype, buffer=shm_local.buf)
+    sub = arr[row_range[<span class="num">0</span>]:row_range[<span class="num">1</span>]]
+    <span class="kw">return</span> sub.mean(axis=<span class="num">0</span>)
+
+chunks = np.array_split(np.arange(X.shape[<span class="num">0</span>]), <span class="num">8</span>)
+ranges = [(c[<span class="num">0</span>], c[-<span class="num">1</span>]+<span class="num">1</span>) <span class="kw">for</span> c <span class="kw">in</span> chunks]
+<span class="kw">with</span> ProcessPoolExecutor(<span class="num">8</span>) <span class="kw">as</span> ex:
+    means = <span class="func">list</span>(ex.map(worker, [shm.name]*<span class="num">8</span>, [X.shape]*<span class="num">8</span>, [X.dtype]*<span class="num">8</span>, ranges))
+
+shm.close(); shm.unlink()
+</pre></div>
+<div class="code-tab-content"><span class="filename">dask.py — lazy DAGs for arbitrary workflows</span><pre><span class="kw">import</span> dask
+<span class="kw">from</span> dask.distributed <span class="kw">import</span> Client
+
+client = Client(n_workers=<span class="num">4</span>, threads_per_worker=<span class="num">2</span>)
+
+<span class="kw">@</span><span class="func">dask.delayed</span>
+<span class="kw">def</span> <span class="func">align</span>(fq):    <span class="comment"># wrap any function</span>
+    <span class="kw">return</span> run_bwa(fq)
+
+<span class="kw">@</span><span class="func">dask.delayed</span>
+<span class="kw">def</span> <span class="func">call_variants</span>(bam):
+    <span class="kw">return</span> run_deepvariant(bam)
+
+<span class="kw">@</span><span class="func">dask.delayed</span>
+<span class="kw">def</span> <span class="func">merge</span>(vcfs):
+    <span class="kw">return</span> run_bcftools_merge(vcfs)
+
+bams = [align(f) <span class="kw">for</span> f <span class="kw">in</span> fastqs]
+vcfs = [call_variants(b) <span class="kw">for</span> b <span class="kw">in</span> bams]
+final = merge(vcfs)
+final.visualize(<span class="str">"dag.svg"</span>)        <span class="comment"># inspect the dependency graph</span>
+result = final.compute()           <span class="comment"># schedule + run on the cluster</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 3: Fork pitfalls ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、multiprocessing 的三大地雷" data-en="II. Three Multiprocessing Pitfalls">二、multiprocessing 的三大地雷</h2>
+<div class="card-grid">
+<div class="card">
+<div class="card-title" data-zh="① fork vs spawn" data-en="① fork vs spawn">① fork vs spawn</div>
+<div class="card-body" data-lang="zh">Linux 預設 <code>fork</code>（複製整個 process），macOS 14+ 與 Windows 預設 <code>spawn</code>（重新啟動 Python）。在 fork 模式下，CUDA context、OpenMP thread pool、log 檔 handle 都會留在 child 中造成 deadlock 或 corruption。建議 <code>mp.set_start_method("spawn", force=True)</code> 寫死。</div>
+<div class="card-body" data-lang="en">Linux defaults to <code>fork</code> (clones the process); macOS 14+ and Windows default to <code>spawn</code> (fresh Python). With fork, CUDA contexts, OpenMP thread pools, and log file handles all carry over and can deadlock or corrupt. Pin <code>mp.set_start_method("spawn", force=True)</code>.</div>
+</div>
+<div class="card">
+<div class="card-title" data-zh="② pickling 開銷" data-en="② pickle overhead">② pickling 開銷</div>
+<div class="card-body" data-lang="zh">傳給 worker 的參數會被 pickle 序列化、複製到子行程、再 unpickle。傳一個 4GB matrix 給 8 個 worker = 32 GB 多餘 RAM。解法：<code>shared_memory</code>、joblib 的 <code>mmap_mode</code>、或把資料放檔案讓 worker 自己讀。</div>
+<div class="card-body" data-lang="en">Worker args get pickled, copied to child, then unpickled. Sending a 4 GB matrix to 8 workers = 32 GB of extra RAM. Solutions: <code>shared_memory</code>, joblib's <code>mmap_mode</code>, or let workers read the file themselves.</div>
+</div>
+<div class="card">
+<div class="card-title" data-zh="③ 不可 pickle 的物件" data-en="③ unpicklable objects">③ 不可 pickle 的物件</div>
+<div class="card-body" data-lang="zh">Lambda、closure、開啟的檔案、SQLite connection、socket、CUDA context 都 <strong>不能</strong> pickle。傳 lambda 給 <code>Pool.map</code> 會炸。解法：頂層 <code>def</code> 函式；用 <code>cloudpickle</code>（joblib loky backend 已內建）；在 worker 內部才開啟連線。</div>
+<div class="card-body" data-lang="en">Lambdas, closures, open files, SQLite connections, sockets, CUDA contexts are NOT picklable. Passing a lambda to <code>Pool.map</code> crashes. Fixes: top-level <code>def</code> functions; <code>cloudpickle</code> (joblib loky uses it); open connections inside the worker.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 4: R parallel ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、R 的平行運算生態" data-en="III. The R Parallelism Ecosystem">三、R 的平行運算生態</h2>
+<div data-lang="zh"><p>R 沒有 GIL，但預設 single-threaded。三套主流框架：</p>
+<ul>
+<li><strong>future + furrr：</strong>把 <code>purrr::map</code> 換成 <code>furrr::future_map</code>，一行切換 multisession（spawn）/ multicore（fork，僅 Linux/macOS）/ cluster / remote。</li>
+<li><strong>foreach + doParallel：</strong>傳統做法，<code>foreach(i = 1:N) %dopar% { ... }</code>。</li>
+<li><strong>BiocParallel：</strong>Bioconductor 標準介面，提供 <code>SerialParam</code>、<code>MulticoreParam</code>、<code>SnowParam</code>、<code>BatchtoolsParam</code>（SGE/SLURM/Torque），可在套件作者層級統一抽象。</li>
+</ul>
+</div>
+<div data-lang="en"><p>R has no GIL but is single-threaded by default. Three mainstream frameworks:</p>
+<ul>
+<li><strong>future + furrr:</strong> Replace <code>purrr::map</code> with <code>furrr::future_map</code>; one line switches between multisession (spawn) / multicore (fork; Linux/macOS only) / cluster / remote.</li>
+<li><strong>foreach + doParallel:</strong> Traditional approach, <code>foreach(i = 1:N) %dopar% { ... }</code>.</li>
+<li><strong>BiocParallel:</strong> Bioconductor standard interface providing <code>SerialParam</code>, <code>MulticoreParam</code>, <code>SnowParam</code>, <code>BatchtoolsParam</code> (SGE/SLURM/Torque) — lets package authors abstract over backends.</li>
+</ul>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">furrr.R</button>
+<button class="code-tab-btn">foreach.R</button>
+<button class="code-tab-btn">biocparallel.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">furrr.R — drop-in parallel purrr</span><pre>library(furrr)
+plan(multisession, workers = <span class="num">8</span>)   <span class="comment"># or: multicore / cluster / remote</span>
+
+results &lt;- future_map(sample_ids, function(sid) {
+  obj &lt;- readRDS(paste0(<span class="str">"data/"</span>, sid, <span class="str">".rds"</span>))
+  obj &lt;- NormalizeData(obj)
+  obj &lt;- FindVariableFeatures(obj)
+  list(id = sid, var = VariableFeatures(obj))
+}, .progress = TRUE, .options = furrr_options(seed = <span class="num">42</span>))
+<span class="comment"># seed = 42 → reproducible parallel RNG (L'Ecuyer-CMRG streams)</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">foreach.R — traditional</span><pre>library(foreach); library(doParallel)
+cl &lt;- makeCluster(<span class="num">8</span>)
+registerDoParallel(cl)
+
+results &lt;- foreach(sid = sample_ids,
+                   .packages = c(<span class="str">"Seurat"</span>),
+                   .errorhandling = <span class="str">"pass"</span>) %dopar% {
+  obj &lt;- readRDS(paste0(<span class="str">"data/"</span>, sid, <span class="str">".rds"</span>))
+  process(obj)
+}
+stopCluster(cl)
+</pre></div>
+<div class="code-tab-content"><span class="filename">biocparallel.R — Bioconductor standard</span><pre>library(BiocParallel)
+
+<span class="comment"># Set a default backend for the whole session</span>
+register(MulticoreParam(workers = <span class="num">8</span>))
+
+<span class="comment"># Now any Bioconductor function that accepts BPPARAM uses it</span>
+res &lt;- bplapply(sample_ids, process_one_sample)
+
+<span class="comment"># Or run on a SLURM cluster</span>
+slurm &lt;- BatchtoolsParam(workers = <span class="num">100</span>, cluster = <span class="str">"slurm"</span>,
+                        resources = list(walltime = <span class="num">3600</span>, memory = <span class="str">"8G"</span>))
+res &lt;- bplapply(samples, deep_analysis, BPPARAM = slurm)
+
+<span class="comment"># Use SerialParam() in tests for reproducibility / debugging</span>
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>fork + BLAS = trouble：</strong>在 R 用 <code>mclapply</code>（fork）時，OpenBLAS / MKL 的執行緒池會跟 fork 衝突造成 hang。解法：<code>RhpcBLASctl::blas_set_num_threads(1)</code> 或改用 <code>SnowParam</code>。Python 同樣問題：fork 前先 <code>OPENBLAS_NUM_THREADS=1</code>。</span>
+<span data-lang="en"><strong>fork + BLAS = trouble:</strong> R's <code>mclapply</code> (fork) conflicts with OpenBLAS/MKL thread pools and can hang. Fix: <code>RhpcBLASctl::blas_set_num_threads(1)</code> or use <code>SnowParam</code>. Same issue in Python: set <code>OPENBLAS_NUM_THREADS=1</code> before forking.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 5: Amdahl ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="四、Amdahl 定律：為什麼不會線性加速" data-en="IV. Amdahl's Law: Why You Don't Get Linear Speedup">四、Amdahl 定律：為什麼不會線性加速</h2>
+<div data-lang="zh">
+<p>如果你的程式 90% 可平行、10% 必須序列化，<strong>無論用多少核心，加速上限是 10×</strong>。Amdahl's Law：<br>
+<code>S(N) = 1 / (s + (1-s)/N)</code>，其中 s 是序列化比例。<br>
+另外還有 <strong>實際 overhead</strong>：行程啟動、pickling、I/O 競爭、cache thrashing——讓真實曲線比理論更平。</p>
+</div>
+<div data-lang="en">
+<p>If 90% of your program is parallelizable and 10% must be serial, <strong>no number of cores beats 10× speedup</strong>. Amdahl's Law:<br>
+<code>S(N) = 1 / (s + (1-s)/N)</code>, where s is the serial fraction.<br>
+On top of that, real-world overhead (process startup, pickling, I/O contention, cache thrashing) flattens the curve further.</p>
+</div>
+
+<div class="interactive-panel">
+<h3 data-zh="📈 Amdahl 曲線" data-en="📈 Amdahl Curve">📈 Amdahl 曲線</h3>
+<div class="slider-group">
+  <label><span data-zh="序列化比例 s" data-en="Serial fraction s">序列化比例 s</span> = <span id="sVal">0.10</span></label>
+  <input type="range" id="sliderS" min="0" max="50" value="10" step="1">
+</div>
+<div class="slider-group">
+  <label><span data-zh="每 worker overhead (%)" data-en="Per-worker overhead (%)">每 worker overhead</span> = <span id="oVal">3</span>%</label>
+  <input type="range" id="sliderO" min="0" max="30" value="3" step="1">
+</div>
+<svg id="amdahlChart" viewBox="0 0 720 360" style="width:100%;height:auto;background:#fafafa;border:1px solid #ddd;border-radius:6px;margin-top:.6rem"></svg>
+<div class="sim-stats" style="margin-top:.8rem">
+  <span class="sim-stat info" id="amdahlIdeal8">ideal 8c: — ×</span>
+  <span class="sim-stat pass"  id="amdahlReal8">real 8c: — ×</span>
+  <span class="sim-stat fail"  id="amdahlMax">max speedup: — ×</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 6: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個平行工具？" data-en="Which parallel tool?">該用哪個平行工具？</h2>
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要打 100 個 REST endpoint 或下載 100 個檔案」</strong> → <code>asyncio</code> / <code>ThreadPoolExecutor</code> (I/O bound)</span><span data-lang="en"><strong>"100 REST calls or 100 downloads"</strong> → <code>asyncio</code> / <code>ThreadPoolExecutor</code> (I/O bound)</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要對 100 個 BAM 跑變異呼叫」</strong> → <code>joblib.Parallel</code> 或 <code>ProcessPoolExecutor</code>（CPU bound + embarrassingly parallel）</span><span data-lang="en"><strong>"Variant-call 100 BAMs"</strong> → <code>joblib.Parallel</code> or <code>ProcessPoolExecutor</code> (CPU + embarrassingly parallel)</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我的資料是 100 GB matrix，要送給 8 個 worker」</strong> → <code>multiprocessing.shared_memory</code> 或 mmap，避免 8 倍複製</span><span data-lang="en"><strong>"100 GB matrix → 8 workers"</strong> → <code>multiprocessing.shared_memory</code> or mmap; avoid 8× copy</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我有複雜 DAG，多步驟有依賴」</strong> → <code>dask.delayed</code> / Nextflow / Snakemake (見 B10)</span><span data-lang="en"><strong>"Complex DAG with dependencies"</strong> → <code>dask.delayed</code> / Nextflow / Snakemake (see B10)</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要把工作丟到 SLURM/SGE cluster」</strong> → Py: <code>dask-jobqueue</code>；R: <code>BiocParallel::BatchtoolsParam</code></span><span data-lang="en"><strong>"Dispatch to SLURM/SGE"</strong> → Py: <code>dask-jobqueue</code>; R: <code>BiocParallel::BatchtoolsParam</code></span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我寫 Bioconductor 套件，使用者環境難料」</strong> → 公開 API 收 <code>BPPARAM</code> 參數，預設 <code>SerialParam()</code></span><span data-lang="en"><strong>"Writing a Bioconductor package"</strong> → expose a <code>BPPARAM</code> argument, default <code>SerialParam()</code></span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> 一段純 Python 數值迴圈，用 4 個 thread (ThreadPoolExecutor) 並行，結果幾乎沒變快。為什麼？</p>
+<p data-lang="en"><strong>Q1.</strong> A pure-Python numeric loop, run on 4 threads via ThreadPoolExecutor, gains almost no speedup. Why?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. ThreadPoolExecutor 有 bug</span><span data-lang="en">A. ThreadPoolExecutor is buggy</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. CPU 只有 1 核</span><span data-lang="en">B. CPU has only 1 core</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. GIL 同時只允許一個 thread 跑 Python bytecode；改用 ProcessPoolExecutor 或讓 hot loop 走 NumPy/Numba 釋放 GIL</span><span data-lang="en">C. The GIL allows only one thread to run Python bytecode at a time; use ProcessPoolExecutor or push the hot loop into NumPy/Numba which release the GIL</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. Python 自動偵測並降速</span><span data-lang="en">D. Python detects threads and throttles</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>純 Python compute 在 thread 中會搶 GIL；要嘛換 process pool，要嘛把熱迴圈交給釋放 GIL 的 C extension（NumPy / Numba @njit(nogil=True)）。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Pure-Python compute serializes on the GIL across threads; either use a process pool, or push the hot loop into a GIL-releasing C extension (NumPy / Numba @njit(nogil=True)).</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q2.</strong> Amdahl 定律：序列化部分占 20%、可平行部分占 80%，無限多核心時加速上限是？</p>
+<p data-lang="en"><strong>Q2.</strong> Amdahl: 20% serial, 80% parallel. With infinite cores, the maximum speedup is?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 5×（= 1/0.2）</span><span data-lang="en">A. 5× (= 1/0.2)</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 80×</span><span data-lang="en">B. 80×</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 無限大</span><span data-lang="en">C. Infinite</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 由 CPU 廠商決定</span><span data-lang="en">D. Depends on the CPU vendor</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>當 N→∞，<code>S = 1 / (s + (1-s)/N) → 1/s = 1/0.2 = 5</code>。「最後那 20% 不能平行」決定了天花板。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> As N→∞, <code>S = 1/(s + (1-s)/N) → 1/s = 1/0.2 = 5</code>. The unparallelizable 20% sets the ceiling.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q3.</strong> 你把一個 4GB NumPy 矩陣傳給 <code>ProcessPoolExecutor</code> 上的 8 個 worker，記憶體爆增到 36GB。最佳解法？</p>
+<p data-lang="en"><strong>Q3.</strong> You hand a 4 GB NumPy matrix to 8 workers via ProcessPoolExecutor and RAM blows up to 36 GB. Best fix?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 多買 RAM</span><span data-lang="en">A. Buy more RAM</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 用 <code>multiprocessing.shared_memory</code> 或 joblib 的 <code>mmap_mode</code>，讓 8 worker 共讀同一塊</span><span data-lang="en">B. Use <code>multiprocessing.shared_memory</code> or joblib's <code>mmap_mode</code> so workers share one buffer</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 改用 threading</span><span data-lang="en">C. Switch to threading</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 把矩陣切成 8 個小檔再傳</span><span data-lang="en">D. Split into 8 small files</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>傳遞 NumPy array 給 worker 預設會 pickle → 複製 → unpickle，8 個 worker 就是 8 份複本。<code>shared_memory</code> 與 memmap 都是 single-copy 解法。Threading 行不通（GIL）；切檔反而更慢且仍會複製。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> Passing arrays to workers defaults to pickle → copy → unpickle; 8 workers = 8 copies. <code>shared_memory</code> and memmap give single-copy access. Threading won't help (GIL); splitting files makes I/O worse and still copies.</div>
+</div>
+
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="compiled-acceleration.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Prev">← 上一頁</span><span class="nav-title" data-zh="B2 · 向量化與編譯加速" data-en="B2 · Vectorization & Compiled">B2 · 向量化與編譯加速</span></a>
+<a href="gpu-bioinformatics.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="B4 · GPU 加速生醫運算" data-en="B4 · GPU-Accelerated Bioinformatics">B4 · GPU 加速生醫運算</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · B3 平行運算</footer>
+
+<script src="i18n.js"></script>
+<script>
+// ===== Interactive: Amdahl curve =====
+const svg = document.getElementById('amdahlChart');
+const W = 720, H = 360, pad = { l: 50, r: 20, t: 30, b: 40 };
+
+function drawAmdahl(){
+  const s = +document.getElementById('sliderS').value / 100;     // serial fraction
+  const o = +document.getElementById('sliderO').value / 100;      // per-worker overhead
+  document.getElementById('sVal').textContent = s.toFixed(2);
+  document.getElementById('oVal').textContent = (o*100).toFixed(0);
+
+  const Nmax = 64;
+  const idealPts = [], realPts = [];
+  for (let n = 1; n <= Nmax; n++) {
+    const ideal = 1 / (s + (1 - s) / n);
+    const real  = 1 / (s + (1 - s) / n + o * n);   // overhead grows with workers
+    idealPts.push([n, ideal]);
+    realPts.push([n, Math.max(0.1, real)]);
+  }
+  const yMax = Math.max(...idealPts.map(p => p[1]), 10) * 1.05;
+  const xScale = n => pad.l + (n - 1) / (Nmax - 1) * (W - pad.l - pad.r);
+  const yScale = v => H - pad.b - v / yMax * (H - pad.t - pad.b);
+
+  let svgInner = '';
+  // grid + axes
+  for (let g = 0; g <= 10; g++) {
+    const y = pad.t + g / 10 * (H - pad.t - pad.b);
+    svgInner += `<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#eee"/>`;
+  }
+  // axis labels
+  for (let g = 0; g <= 5; g++) {
+    const v = yMax * (1 - g/5);
+    const y = pad.t + g / 5 * (H - pad.t - pad.b);
+    svgInner += `<text x="${pad.l-5}" y="${y+4}" text-anchor="end" font-size="11" fill="#666">${v.toFixed(1)}×</text>`;
+  }
+  [1, 8, 16, 32, 64].forEach(n => {
+    const x = xScale(n);
+    svgInner += `<text x="${x}" y="${H-pad.b+15}" text-anchor="middle" font-size="11" fill="#666">${n}</text>`;
+  });
+  svgInner += `<text x="${W/2}" y="${H-5}" text-anchor="middle" font-size="12" fill="#444">cores</text>`;
+  svgInner += `<text x="15" y="${H/2}" text-anchor="middle" font-size="12" fill="#444" transform="rotate(-90 15 ${H/2})">speedup</text>`;
+
+  // linear reference
+  const linPath = `M${xScale(1)},${yScale(1)} L${xScale(Nmax)},${yScale(Math.min(Nmax, yMax))}`;
+  svgInner += `<path d="${linPath}" stroke="#aaa" stroke-dasharray="4 4" fill="none"/>`;
+  svgInner += `<text x="${W-pad.r-10}" y="${yScale(Math.min(Nmax, yMax))+15}" text-anchor="end" font-size="11" fill="#999">linear</text>`;
+
+  // ideal Amdahl
+  const idealPath = idealPts.map((p,i) => `${i===0?'M':'L'}${xScale(p[0])},${yScale(p[1])}`).join(' ');
+  svgInner += `<path d="${idealPath}" stroke="#27ae60" stroke-width="2.5" fill="none"/>`;
+
+  // real (with overhead)
+  const realPath = realPts.map((p,i) => `${i===0?'M':'L'}${xScale(p[0])},${yScale(p[1])}`).join(' ');
+  svgInner += `<path d="${realPath}" stroke="#c0392b" stroke-width="2.5" fill="none"/>`;
+
+  // legend
+  svgInner += `<rect x="${W-180}" y="${pad.t}" width="160" height="55" fill="white" stroke="#ccc"/>`;
+  svgInner += `<line x1="${W-170}" y1="${pad.t+15}" x2="${W-145}" y2="${pad.t+15}" stroke="#27ae60" stroke-width="2.5"/>`;
+  svgInner += `<text x="${W-140}" y="${pad.t+19}" font-size="11" fill="#333">ideal Amdahl</text>`;
+  svgInner += `<line x1="${W-170}" y1="${pad.t+35}" x2="${W-145}" y2="${pad.t+35}" stroke="#c0392b" stroke-width="2.5"/>`;
+  svgInner += `<text x="${W-140}" y="${pad.t+39}" font-size="11" fill="#333">with overhead</text>`;
+
+  svg.innerHTML = svgInner;
+
+  // stats
+  const i8 = idealPts[7][1], r8 = realPts[7][1];
+  const sMax = 1 / s;
+  document.getElementById('amdahlIdeal8').textContent = `ideal 8c: ${i8.toFixed(2)}×`;
+  document.getElementById('amdahlReal8').textContent  = `real 8c: ${r8.toFixed(2)}×`;
+  document.getElementById('amdahlMax').textContent    = `max speedup: ${sMax.toFixed(1)}×`;
+}
+document.getElementById('sliderS').addEventListener('input', drawAmdahl);
+document.getElementById('sliderO').addEventListener('input', drawAmdahl);
+drawAmdahl();
+</script>
+</body></html>

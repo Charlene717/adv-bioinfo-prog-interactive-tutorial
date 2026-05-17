@@ -1,0 +1,586 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>A1: 進階 Python · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html" class="active">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK A · TOPIC 1 / 20</div>
+<h1 data-zh="進階 Python：把腳本升級為函式庫" data-en="Advanced Python: From Scripts to Libraries">進階 Python：把腳本升級為函式庫</h1>
+<p class="subtitle" data-lang="zh">Type hints、dataclasses、generator、decorator、context manager、async/await——讓你的 scRNA-seq / variant calling 程式從「能跑」變成「可被其他人安全引用」。</p>
+<p class="subtitle" data-lang="en">Type hints, dataclasses, generators, decorators, context managers, async/await — turn your scRNA-seq / variant-calling scripts from "it runs" into "others can safely import it."</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼研究腳本需要「進階化」？" data-en="Why must research scripts level up?">為什麼研究腳本需要「進階化」？</h2>
+<div data-lang="zh">
+<p>大多數生醫資訊腳本一開始是 Jupyter notebook 中的 <code>for cell in cells: ...</code>。但當你的腳本被同事 import、被審稿者要求重現、被引用到論文方法章節，就會暴露三類問題：</p>
+<ul>
+<li><strong>型別模糊：</strong>函式參數 <code>data</code> 到底是 <code>pd.DataFrame</code>、<code>AnnData</code> 還是 <code>np.ndarray</code>？呼叫者只能看 source code。</li>
+<li><strong>狀態管理混亂：</strong>檔案開了忘關、temp file 沒清、try/except 漏寫——pipeline 失敗時留下半成品檔案。</li>
+<li><strong>難以擴充：</strong>要從處理 1 個樣本變成處理 1000 個，發現迴圈寫死、記憶體炸掉、不能 streaming。</li>
+</ul>
+<p>本章六個主題：<strong>type hints</strong>、<strong>dataclasses</strong>、<strong>generators</strong>、<strong>decorators</strong>、<strong>context managers</strong>、<strong>async/await</strong>，是解決上述問題的核心工具。</p>
+</div>
+<div data-lang="en">
+<p>Most bioinformatics scripts start as a <code>for cell in cells: ...</code> in a Jupyter notebook. But once your script gets imported by a colleague, reviewed for reproducibility, or cited in a methods section, three pain points emerge:</p>
+<ul>
+<li><strong>Ambiguous types:</strong> Is the parameter <code>data</code> a <code>pd.DataFrame</code>, an <code>AnnData</code>, or an <code>np.ndarray</code>? Callers must read source code to know.</li>
+<li><strong>State management chaos:</strong> Files opened without closing, temp files leaked, missing try/except — pipelines fail and leave half-written outputs.</li>
+<li><strong>Hard to scale:</strong> Going from 1 sample to 1000 reveals hard-coded loops, OOM crashes, no streaming.</li>
+</ul>
+<p>The six topics here — <strong>type hints</strong>, <strong>dataclasses</strong>, <strong>generators</strong>, <strong>decorators</strong>, <strong>context managers</strong>, <strong>async/await</strong> — are the core tools that solve these problems.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>學習策略：</strong>不要試圖一次學完。把每個工具當成「某個常見痛點」的解藥——當你下次寫到那個痛點，就用上對應工具。本頁附「何時應該用」的決策樹。</span>
+<span data-lang="en"><strong>Learning strategy:</strong> Don't try to learn all at once. Treat each tool as a cure for a specific pain point — next time you hit that pain, reach for the tool. A decision tree on "when to use what" is included below.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Type Hints ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Type Hints 與 mypy / pyright" data-en="I. Type Hints + mypy / pyright">一、Type Hints 與 mypy / pyright</h2>
+<div data-lang="zh"><p>Type hints 是 Python 3.5+ 引入的 <strong>選擇性靜態型別標註</strong>。CPython 不會在 runtime 強制檢查，但工具（mypy / pyright）會在 CI 時抓出型別錯誤。對於 Bioconductor 等級的套件，type hints 是文件、IDE 自動完成、與重構安全網的合一解方。</p></div>
+<div data-lang="en"><p>Type hints are <strong>optional static type annotations</strong> introduced in Python 3.5+. CPython doesn't enforce them at runtime, but tools (mypy/pyright) catch type errors in CI. For Bioconductor-grade libraries, type hints serve as documentation, IDE autocomplete, and refactor-safety all in one.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">basic.py</button>
+<button class="code-tab-btn">generics.py</button>
+<button class="code-tab-btn">protocol.py</button>
+<button class="code-tab-btn">mypy.toml</button>
+</div>
+<div class="code-tab-content active"><span class="filename">basic.py</span><pre><span class="comment"># Python 3.10+ syntax (no need for `from typing import Optional`)</span>
+<span class="kw">from</span> pathlib <span class="kw">import</span> Path
+<span class="kw">import</span> pandas <span class="kw">as</span> pd
+
+<span class="kw">def</span> <span class="func">read_counts</span>(
+    path: Path | str,
+    sep: str = <span class="str">"\t"</span>,
+    min_cells: int = <span class="num">3</span>,
+) -> pd.DataFrame:
+    <span class="str">"""Read gene-count matrix, drop genes seen in &lt; min_cells cells."""</span>
+    df = pd.read_csv(path, sep=sep, index_col=<span class="num">0</span>)
+    mask = (df &gt; <span class="num">0</span>).sum(axis=<span class="num">1</span>) &gt;= min_cells
+    <span class="kw">return</span> df.loc[mask]
+
+<span class="comment"># Callers + IDEs both know: path can be Path or str, return is DataFrame</span>
+counts = read_counts(<span class="str">"data/sample.tsv"</span>, min_cells=<span class="num">5</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">generics.py</span><pre><span class="kw">from</span> typing <span class="kw">import</span> TypeVar, Generic, Sequence
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+T = TypeVar(<span class="str">"T"</span>, bound=np.number)  <span class="comment"># T must be numeric</span>
+
+<span class="kw">def</span> <span class="func">zscore</span>(x: np.ndarray[<span class="kw">tuple</span>[<span class="kw">int</span>, ...], np.dtype[T]]) -&gt; np.ndarray:
+    <span class="kw">return</span> (x - x.mean(axis=<span class="num">0</span>)) / x.std(axis=<span class="num">0</span>)
+
+<span class="comment"># Generic container</span>
+<span class="kw">class</span> <span class="cls">GeneSet</span>(Generic[T]):
+    <span class="kw">def</span> <span class="func">__init__</span>(self, genes: Sequence[T]) -&gt; <span class="kw">None</span>:
+        self.genes: <span class="kw">list</span>[T] = <span class="kw">list</span>(genes)
+    <span class="kw">def</span> <span class="func">first</span>(self) -&gt; T:
+        <span class="kw">return</span> self.genes[<span class="num">0</span>]
+</pre></div>
+<div class="code-tab-content"><span class="filename">protocol.py — structural typing</span><pre><span class="kw">from</span> typing <span class="kw">import</span> Protocol, runtime_checkable
+
+<span class="kw">@</span><span class="func">runtime_checkable</span>
+<span class="kw">class</span> <span class="cls">Normalizer</span>(Protocol):
+    <span class="kw">def</span> <span class="func">fit_transform</span>(self, X: np.ndarray) -&gt; np.ndarray: ...
+
+<span class="comment"># Anything that has `fit_transform` matches — no inheritance needed</span>
+<span class="kw">def</span> <span class="func">run_pipeline</span>(X: np.ndarray, norm: Normalizer) -&gt; np.ndarray:
+    <span class="kw">return</span> norm.fit_transform(X)
+
+<span class="comment"># sklearn's StandardScaler, your own LogNormalize — both satisfy Normalizer</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">pyproject.toml — mypy / pyright config</span><pre><span class="str">[tool.mypy]</span>
+python_version = <span class="str">"3.11"</span>
+strict = <span class="kw">true</span>
+ignore_missing_imports = <span class="kw">true</span>   <span class="comment"># for libs without stubs</span>
+warn_unused_ignores = <span class="kw">true</span>
+disallow_untyped_defs = <span class="kw">true</span>
+
+<span class="str">[tool.pyright]</span>
+typeCheckingMode = <span class="str">"strict"</span>
+reportMissingTypeStubs = <span class="str">"warning"</span>
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>注意：</strong>Type hints 在 runtime 不被強制執行。<code>def f(x: int)</code> 仍可以被傳入 <code>"hello"</code> 而不報錯——除非你用 <code>pydantic</code> 或 <code>beartype</code> 來啟用 runtime 檢查。</span>
+<span data-lang="en"><strong>Note:</strong> Type hints are NOT runtime-enforced. <code>def f(x: int)</code> still accepts <code>"hello"</code> without error — unless you use <code>pydantic</code> or <code>beartype</code> for runtime checks.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: Dataclasses & Pydantic ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、Dataclasses 與 Pydantic" data-en="II. Dataclasses & Pydantic">二、Dataclasses 與 Pydantic</h2>
+<div data-lang="zh">
+<p>當你的函式參數變多 (<code>min_cells, max_mt, sample_id, batch, ...</code>)，把它們包進一個物件比每次傳 8 個參數更乾淨。三種選擇：</p>
+</div>
+<div data-lang="en">
+<p>When function signatures grow (<code>min_cells, max_mt, sample_id, batch, ...</code>), wrapping them in an object is cleaner than passing 8 arguments. Three choices:</p>
+</div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="工具" data-en="Tool">工具</th>
+<th data-zh="標準函式庫?" data-en="Stdlib?">標準函式庫?</th>
+<th data-zh="Runtime 型別檢查" data-en="Runtime check">Runtime 型別檢查</th>
+<th data-zh="JSON / 序列化" data-en="JSON/Serialize">JSON / 序列化</th>
+<th data-zh="適用場景" data-en="When to use">適用場景</th>
+</tr></thead><tbody>
+<tr><td><code>@dataclass</code></td><td>✅</td><td>❌</td><td data-zh="手動" data-en="Manual">手動</td><td data-zh="內部結構、配置物件、不需驗證" data-en="Internal structs, simple configs">內部結構、配置物件、不需驗證</td></tr>
+<tr><td><code>attrs</code></td><td>❌</td><td data-zh="可選 (validators)" data-en="Optional (validators)">可選 (validators)</td><td data-zh="搭配 cattrs" data-en="Via cattrs">搭配 cattrs</td><td data-zh="比 dataclass 更多功能 (slots, on_setattr)" data-en="More features than dataclass">比 dataclass 更多功能</td></tr>
+<tr><td><code>Pydantic v2</code></td><td>❌</td><td>✅</td><td data-zh="原生 (Rust 核心)" data-en="Native (Rust core)">原生 (Rust 核心)</td><td data-zh="API 邊界、設定檔 (YAML/TOML)、來自外部的資料" data-en="API boundaries, configs, external data">API 邊界、設定檔、外部資料</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">dataclass.py</button>
+<button class="code-tab-btn">pydantic.py</button>
+<button class="code-tab-btn">slots.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">dataclass.py</span><pre><span class="kw">from</span> dataclasses <span class="kw">import</span> dataclass, field
+<span class="kw">from</span> pathlib <span class="kw">import</span> Path
+
+<span class="kw">@</span><span class="func">dataclass</span>(frozen=<span class="kw">True</span>)  <span class="comment"># immutable → hashable, safe as dict key</span>
+<span class="kw">class</span> <span class="cls">QCParams</span>:
+    min_features: int = <span class="num">200</span>
+    max_features: int = <span class="num">6000</span>
+    max_mt_pct: float = <span class="num">10.0</span>
+    species: str = <span class="str">"human"</span>
+    excluded_chrs: <span class="kw">tuple</span>[str, ...] = field(default_factory=<span class="kw">lambda</span>: (<span class="str">"chrY"</span>, <span class="str">"chrM"</span>))
+
+<span class="kw">def</span> <span class="func">run_qc</span>(adata, params: QCParams):
+    keep = (adata.obs.nFeature &gt;= params.min_features) &amp; \
+           (adata.obs.nFeature &lt;= params.max_features) &amp; \
+           (adata.obs.pct_mt   &lt;= params.max_mt_pct)
+    <span class="kw">return</span> adata[keep].copy()
+</pre></div>
+<div class="code-tab-content"><span class="filename">pydantic.py — for YAML configs / API bodies</span><pre><span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, Field, field_validator
+<span class="kw">import</span> yaml
+
+<span class="kw">class</span> <span class="cls">QCConfig</span>(BaseModel):
+    min_features: int = Field(<span class="num">200</span>, ge=<span class="num">0</span>, le=<span class="num">10000</span>)
+    max_features: int = Field(<span class="num">6000</span>, ge=<span class="num">100</span>)
+    max_mt_pct:   float = Field(<span class="num">10.0</span>, ge=<span class="num">0</span>, le=<span class="num">100</span>)
+    species:      str   = <span class="str">"human"</span>
+
+    <span class="kw">@</span><span class="func">field_validator</span>(<span class="str">"species"</span>)
+    <span class="kw">@</span><span class="func">classmethod</span>
+    <span class="kw">def</span> <span class="func">_known_sp</span>(<span class="kw">cls</span>, v: str) -&gt; str:
+        <span class="kw">if</span> v <span class="kw">not in</span> {<span class="str">"human"</span>, <span class="str">"mouse"</span>, <span class="str">"rat"</span>}:
+            <span class="kw">raise</span> <span class="cls">ValueError</span>(<span class="str">f"species must be human/mouse/rat, got {v}"</span>)
+        <span class="kw">return</span> v
+
+<span class="comment"># Auto-validate when loading from YAML</span>
+<span class="kw">with</span> open(<span class="str">"config.yaml"</span>) <span class="kw">as</span> f:
+    cfg = QCConfig(**yaml.safe_load(f))
+</pre></div>
+<div class="code-tab-content"><span class="filename">slots.py — memory-efficient dataclass</span><pre><span class="kw">from</span> dataclasses <span class="kw">import</span> dataclass
+
+<span class="kw">@</span><span class="func">dataclass</span>(slots=<span class="kw">True</span>)  <span class="comment"># Python 3.10+: no __dict__, 30–50% less RAM</span>
+<span class="kw">class</span> <span class="cls">VariantRecord</span>:
+    chrom: str
+    pos:   int
+    ref:   str
+    alt:   str
+    qual:  float
+
+<span class="comment"># Storing 10M variants → ~600MB instead of ~900MB</span>
+records = [VariantRecord(<span class="str">"chr1"</span>, <span class="num">100</span>+i, <span class="str">"A"</span>, <span class="str">"G"</span>, <span class="num">30.0</span>) <span class="kw">for</span> i <span class="kw">in</span> <span class="func">range</span>(<span class="num">10_000_000</span>)]
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: Generators ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、Generators 與 itertools — 處理巨型檔案" data-en="III. Generators & itertools — handling huge files">三、Generators 與 itertools — 處理巨型檔案</h2>
+<div data-lang="zh">
+<p>Generator 用 <code>yield</code> 一次只產出一個元素，不會把整個檔案讀進記憶體。對於 FASTQ (數十 GB)、VCF (數百萬列)、AnnData (數百萬細胞) 的處理至關重要。</p>
+</div>
+<div data-lang="en">
+<p>A generator uses <code>yield</code> to emit one item at a time without loading the whole file into memory. Critical for FASTQ (tens of GB), VCF (millions of lines), AnnData (millions of cells).</p>
+</div>
+
+<div class="interactive-panel">
+<h3 data-zh="記憶體比較模擬器" data-en="Memory Comparison Simulator">記憶體比較模擬器</h3>
+<p data-lang="zh" style="font-size:.92rem">調整檔案大小，比較「整檔讀入」 vs 「generator 串流」的記憶體佔用。</p>
+<p data-lang="en" style="font-size:.92rem">Adjust file size; compare peak memory of "read-all" vs "generator streaming."</p>
+<div class="slider-group"><label><span data-zh="FASTQ 大小 (GB)" data-en="FASTQ size (GB)">FASTQ 大小</span> <span id="fqsize">10</span></label>
+<input type="range" id="sliderFq" min="1" max="100" value="10" step="1"></div>
+<div class="sim-stats">
+  <span class="sim-stat fail" id="statReadAll">read-all: — GB peak RAM</span>
+  <span class="sim-stat pass" id="statStream">stream: — MB peak RAM</span>
+  <span class="sim-stat info" id="statRatio">— × less RAM</span>
+</div>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">stream_fastq.py</button>
+<button class="code-tab-btn">itertools.py</button>
+<button class="code-tab-btn">pipeline.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">stream_fastq.py</span><pre><span class="kw">from</span> typing <span class="kw">import</span> Iterator
+<span class="kw">import</span> gzip
+
+<span class="kw">def</span> <span class="func">iter_fastq</span>(path: str) -&gt; Iterator[<span class="kw">tuple</span>[str, str, str]]:
+    <span class="str">"""Yield (header, sequence, quality) — never loads whole file."""</span>
+    opener = gzip.open <span class="kw">if</span> path.endswith(<span class="str">".gz"</span>) <span class="kw">else</span> open
+    <span class="kw">with</span> opener(path, <span class="str">"rt"</span>) <span class="kw">as</span> f:
+        <span class="kw">while True</span>:
+            h = f.readline().rstrip()
+            <span class="kw">if not</span> h: <span class="kw">return</span>
+            seq = f.readline().rstrip()
+            f.readline()           <span class="comment"># skip '+'</span>
+            qual = f.readline().rstrip()
+            <span class="kw">yield</span> h, seq, qual
+
+<span class="comment"># Even on a 100GB FASTQ, this uses ~10MB RAM</span>
+gc_counts = <span class="num">0</span>
+<span class="kw">for</span> hdr, seq, qual <span class="kw">in</span> iter_fastq(<span class="str">"reads.fq.gz"</span>):
+    gc_counts += seq.count(<span class="str">"G"</span>) + seq.count(<span class="str">"C"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">itertools.py</span><pre><span class="kw">from</span> itertools <span class="kw">import</span> islice, groupby, chain
+
+<span class="comment"># Take first 1000 reads without loading rest</span>
+first_1k = list(islice(iter_fastq(<span class="str">"reads.fq.gz"</span>), <span class="num">1000</span>))
+
+<span class="comment"># Group VCF lines by chromosome (file MUST be sorted by chrom)</span>
+<span class="kw">def</span> <span class="func">iter_vcf</span>(path: str):
+    <span class="kw">with</span> open(path) <span class="kw">as</span> f:
+        <span class="kw">for</span> line <span class="kw">in</span> f:
+            <span class="kw">if</span> line.startswith(<span class="str">"#"</span>): <span class="kw">continue</span>
+            <span class="kw">yield</span> line.split(<span class="str">"\t"</span>)
+
+<span class="kw">for</span> chrom, recs <span class="kw">in</span> groupby(iter_vcf(<span class="str">"variants.vcf"</span>), key=<span class="kw">lambda</span> r: r[<span class="num">0</span>]):
+    n = <span class="func">sum</span>(<span class="num">1</span> <span class="kw">for</span> _ <span class="kw">in</span> recs)
+    <span class="func">print</span>(<span class="str">f"{chrom}: {n} variants"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">pipeline.py — composable generator pipeline</span><pre><span class="kw">def</span> <span class="func">trim_low_qual</span>(reads, min_q: int = <span class="num">20</span>):
+    <span class="kw">for</span> hdr, seq, qual <span class="kw">in</span> reads:
+        avg = <span class="func">sum</span>(<span class="func">ord</span>(c)-<span class="num">33</span> <span class="kw">for</span> c <span class="kw">in</span> qual) / <span class="func">len</span>(qual)
+        <span class="kw">if</span> avg &gt;= min_q:
+            <span class="kw">yield</span> hdr, seq, qual
+
+<span class="kw">def</span> <span class="func">to_fasta</span>(reads):
+    <span class="kw">for</span> hdr, seq, _ <span class="kw">in</span> reads:
+        <span class="kw">yield</span> <span class="str">f"&gt;{hdr[1:]}\n{seq}\n"</span>
+
+<span class="comment"># Lazy pipeline: nothing runs until you iterate</span>
+pipe = to_fasta(trim_low_qual(iter_fastq(<span class="str">"reads.fq.gz"</span>), min_q=<span class="num">25</span>))
+<span class="kw">with</span> open(<span class="str">"clean.fasta"</span>, <span class="str">"w"</span>) <span class="kw">as</span> out:
+    out.writelines(pipe)
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: Decorators ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="四、Decorators — 切片式行為注入" data-en="IV. Decorators — slicing in cross-cutting behavior">四、Decorators — 切片式行為注入</h2>
+<div data-lang="zh">
+<p>Decorator 是「接受函式並回傳新函式」的高階函式，最常見於 cache、計時、log、retry、權限驗證等「跨切面關注點」。FastAPI 的路由、joblib 的 cache、jit、numba.jit 全都是 decorator。</p>
+</div>
+<div data-lang="en">
+<p>A decorator is a higher-order function that takes a function and returns a new one — typical uses include caching, timing, logging, retries, authorization. FastAPI routes, joblib cache, JIT, numba.jit are all decorators.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">timing.py</button>
+<button class="code-tab-btn">cache.py</button>
+<button class="code-tab-btn">retry.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">timing.py — measure runtime + memory</span><pre><span class="kw">import</span> functools, time, tracemalloc, logging
+<span class="kw">from</span> typing <span class="kw">import</span> Callable, ParamSpec, TypeVar
+
+P = ParamSpec(<span class="str">"P"</span>); R = TypeVar(<span class="str">"R"</span>)
+log = logging.getLogger(__name__)
+
+<span class="kw">def</span> <span class="func">timed</span>(fn: Callable[P, R]) -&gt; Callable[P, R]:
+    <span class="kw">@</span><span class="func">functools.wraps</span>(fn)
+    <span class="kw">def</span> <span class="func">wrapper</span>(*a: P.args, **kw: P.kwargs) -&gt; R:
+        tracemalloc.start()
+        t0 = time.perf_counter()
+        <span class="kw">try</span>:
+            <span class="kw">return</span> fn(*a, **kw)
+        <span class="kw">finally</span>:
+            dt = time.perf_counter() - t0
+            cur, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            log.info(<span class="str">f"{fn.__name__}: {dt:.2f}s, peak {peak/1e6:.1f} MB"</span>)
+    <span class="kw">return</span> wrapper
+
+<span class="kw">@</span><span class="func">timed</span>
+<span class="kw">def</span> <span class="func">run_clustering</span>(adata, resolution: float = <span class="num">0.5</span>):
+    ...
+</pre></div>
+<div class="code-tab-content"><span class="filename">cache.py — memoization + disk cache</span><pre><span class="kw">from</span> functools <span class="kw">import</span> lru_cache
+<span class="kw">from</span> joblib <span class="kw">import</span> Memory
+
+<span class="comment"># In-memory LRU (per-process)</span>
+<span class="kw">@</span><span class="func">lru_cache</span>(maxsize=<span class="num">128</span>)
+<span class="kw">def</span> <span class="func">fetch_gene_info</span>(symbol: str) -&gt; dict:
+    <span class="comment"># Slow REST call to Ensembl/NCBI</span>
+    <span class="kw">return</span> requests.get(<span class="str">f"https://rest.ensembl.org/lookup/symbol/human/{symbol}"</span>).json()
+
+<span class="comment"># Persistent disk cache (joblib) — survives process restart</span>
+mem = Memory(<span class="str">"./.cache"</span>, verbose=<span class="num">0</span>)
+
+<span class="kw">@</span><span class="func">mem.cache</span>
+<span class="kw">def</span> <span class="func">compute_pca</span>(X, n_comp: int = <span class="num">50</span>):
+    <span class="kw">from</span> sklearn.decomposition <span class="kw">import</span> PCA
+    <span class="kw">return</span> PCA(n_comp).fit_transform(X)
+</pre></div>
+<div class="code-tab-content"><span class="filename">retry.py — for flaky REST calls</span><pre><span class="kw">from</span> tenacity <span class="kw">import</span> retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+<span class="kw">import</span> requests
+
+<span class="kw">@</span><span class="func">retry</span>(
+    stop=stop_after_attempt(<span class="num">5</span>),
+    wait=wait_exponential(multiplier=<span class="num">1</span>, min=<span class="num">2</span>, max=<span class="num">30</span>),
+    retry=retry_if_exception_type(requests.HTTPError),
+)
+<span class="kw">def</span> <span class="func">query_ensembl</span>(endpoint: str) -&gt; dict:
+    r = requests.get(<span class="str">f"https://rest.ensembl.org{endpoint}"</span>, timeout=<span class="num">10</span>)
+    r.raise_for_status()
+    <span class="kw">return</span> r.json()
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: Context Managers ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 5" data-en="TOPIC 5">主題 5</div>
+<h2 data-zh="五、Context Managers — 確保資源被釋放" data-en="V. Context Managers — guarantee cleanup">五、Context Managers — 確保資源被釋放</h2>
+<div data-lang="zh">
+<p><code>with</code> 區塊在進入時取得資源、在離開時 (即使是例外) 必定釋放。Bioinformatics 中常見用途：開啟 BAM/VCF 檔案、申請 GPU 記憶體、切換工作目錄、暫時調高 logging level、locking。</p>
+</div>
+<div data-lang="en">
+<p>A <code>with</code> block acquires a resource on entry and <em>always</em> releases on exit (even on exception). Common bioinformatics uses: opening BAM/VCF files, GPU memory, changing working directory, raising logging level, locking.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">contextlib.py</button>
+<button class="code-tab-btn">class_based.py</button>
+<button class="code-tab-btn">multi.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">contextlib.py — quick @contextmanager</span><pre><span class="kw">from</span> contextlib <span class="kw">import</span> contextmanager
+<span class="kw">import</span> os, tempfile, shutil
+
+<span class="kw">@</span><span class="func">contextmanager</span>
+<span class="kw">def</span> <span class="func">cd</span>(path):
+    prev = os.getcwd()
+    os.chdir(path)
+    <span class="kw">try</span>:
+        <span class="kw">yield</span> path
+    <span class="kw">finally</span>:
+        os.chdir(prev)        <span class="comment"># always restored — even on exception</span>
+
+<span class="kw">@</span><span class="func">contextmanager</span>
+<span class="kw">def</span> <span class="func">tempdir</span>():
+    d = tempfile.mkdtemp()
+    <span class="kw">try</span>:
+        <span class="kw">yield</span> d
+    <span class="kw">finally</span>:
+        shutil.rmtree(d, ignore_errors=<span class="kw">True</span>)
+
+<span class="kw">with</span> tempdir() <span class="kw">as</span> d, cd(d):
+    os.system(<span class="str">"samtools sort input.bam -o sorted.bam"</span>)
+    <span class="comment"># tempdir is deleted automatically here</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">class_based.py — for stateful resources</span><pre><span class="kw">import</span> pysam, logging
+
+<span class="kw">class</span> <span class="cls">BamReader</span>:
+    <span class="kw">def</span> <span class="func">__init__</span>(self, path: str):
+        self.path = path
+    <span class="kw">def</span> <span class="func">__enter__</span>(self):
+        self.bam = pysam.AlignmentFile(self.path, <span class="str">"rb"</span>)
+        <span class="kw">return</span> self.bam
+    <span class="kw">def</span> <span class="func">__exit__</span>(self, exc_type, exc_val, tb):
+        self.bam.close()
+        <span class="kw">if</span> exc_type:
+            logging.error(<span class="str">f"BAM read failed on {self.path}: {exc_val}"</span>)
+        <span class="kw">return False</span>   <span class="comment"># don't suppress exception</span>
+
+<span class="kw">with</span> BamReader(<span class="str">"sample.bam"</span>) <span class="kw">as</span> bam:
+    <span class="kw">for</span> read <span class="kw">in</span> bam.fetch(<span class="str">"chr1"</span>, <span class="num">1_000_000</span>, <span class="num">1_001_000</span>):
+        ...
+</pre></div>
+<div class="code-tab-content"><span class="filename">multi.py — ExitStack for variable N resources</span><pre><span class="kw">from</span> contextlib <span class="kw">import</span> ExitStack
+
+<span class="kw">def</span> <span class="func">merge_samples</span>(bam_paths: list[str], out: str):
+    <span class="kw">with</span> ExitStack() <span class="kw">as</span> stack:
+        bams = [stack.enter_context(pysam.AlignmentFile(p, <span class="str">"rb"</span>)) <span class="kw">for</span> p <span class="kw">in</span> bam_paths]
+        writer = stack.enter_context(pysam.AlignmentFile(out, <span class="str">"wb"</span>, template=bams[<span class="num">0</span>]))
+        <span class="kw">for</span> bam <span class="kw">in</span> bams:
+            <span class="kw">for</span> read <span class="kw">in</span> bam:
+                writer.write(read)
+        <span class="comment"># All N files closed automatically on exit</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 7: Async ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 6" data-en="TOPIC 6">主題 6</div>
+<h2 data-zh="六、async / await — 並行 I/O" data-en="VI. async / await — concurrent I/O">六、async / await — 並行 I/O</h2>
+<div data-lang="zh">
+<p>當你要呼叫 100 個 Ensembl REST endpoint，序列化執行需要 100 × 200ms = 20 秒；async 並行可以縮到 ~300ms。<strong>async 適合 I/O 密集 (網路、檔案)，不適合 CPU 密集</strong> (CPU 重的工作用 multiprocessing — 見 Block B)。</p>
+</div>
+<div data-lang="en">
+<p>Querying 100 Ensembl REST endpoints serially: 100 × 200ms = 20s. Async concurrently: ~300ms. <strong>Async is for I/O-bound work (network, disk), not CPU-bound</strong> (use multiprocessing for CPU — see Block B).</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">async_rest.py</button>
+<button class="code-tab-btn">async_db.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">async_rest.py — 100 Ensembl queries in parallel</span><pre><span class="kw">import</span> asyncio, httpx
+
+<span class="kw">async def</span> <span class="func">fetch_gene</span>(client: httpx.AsyncClient, symbol: str) -&gt; dict:
+    r = <span class="kw">await</span> client.get(<span class="str">f"/lookup/symbol/human/{symbol}"</span>, timeout=<span class="num">10</span>)
+    r.raise_for_status()
+    <span class="kw">return</span> r.json()
+
+<span class="kw">async def</span> <span class="func">main</span>(symbols: list[str]) -&gt; list[dict]:
+    <span class="kw">async with</span> httpx.AsyncClient(
+        base_url=<span class="str">"https://rest.ensembl.org"</span>,
+        headers={<span class="str">"Accept"</span>:<span class="str">"application/json"</span>},
+        limits=httpx.Limits(max_connections=<span class="num">20</span>),
+    ) <span class="kw">as</span> client:
+        <span class="kw">return</span> <span class="kw">await</span> asyncio.gather(*(fetch_gene(client, s) <span class="kw">for</span> s <span class="kw">in</span> symbols))
+
+genes = asyncio.run(main([<span class="str">"BRCA1"</span>, <span class="str">"TP53"</span>, <span class="str">"EGFR"</span>] * <span class="num">30</span>))
+</pre></div>
+<div class="code-tab-content"><span class="filename">async_db.py — async PostgreSQL with asyncpg</span><pre><span class="kw">import</span> asyncio, asyncpg
+
+<span class="kw">async def</span> <span class="func">load_variants</span>(sample_ids: list[str]):
+    pool = <span class="kw">await</span> asyncpg.create_pool(<span class="str">"postgresql://user@host/genomics"</span>)
+    <span class="kw">async with</span> pool.acquire() <span class="kw">as</span> conn:
+        rows = <span class="kw">await</span> conn.fetch(
+            <span class="str">"SELECT chrom, pos, ref, alt FROM variants WHERE sample_id = ANY($1)"</span>,
+            sample_ids
+        )
+    <span class="kw">await</span> pool.close()
+    <span class="kw">return</span> rows
+</pre></div>
+</div>
+
+<div class="callout danger"><span class="callout-icon">🚫</span><div>
+<span data-lang="zh"><strong>常見錯誤：</strong>在 async 函式中呼叫 <code>requests.get()</code> 或 <code>time.sleep()</code> 會 block 整個 event loop——讓並行失效。請改用 <code>httpx.AsyncClient</code>、<code>asyncio.sleep()</code>。</span>
+<span data-lang="en"><strong>Common mistake:</strong> Calling <code>requests.get()</code> or <code>time.sleep()</code> inside an async function blocks the entire event loop — defeating concurrency. Use <code>httpx.AsyncClient</code>, <code>asyncio.sleep()</code> instead.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 8: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個工具？" data-en="Which tool do I need?">該用哪個工具？</h2>
+
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我希望 IDE 跳出自動完成 + CI 抓型別錯誤」</strong> → <code>type hints</code> + mypy/pyright</span><span data-lang="en"><strong>"I want IDE autocomplete + CI to catch type errors"</strong> → <code>type hints</code> + mypy/pyright</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我有一堆參數想包起來」</strong> → <code>@dataclass</code> (內部) 或 <code>BaseModel</code> (來自 YAML/API)</span><span data-lang="en"><strong>"I want to bundle parameters"</strong> → <code>@dataclass</code> (internal) or <code>BaseModel</code> (from YAML/API)</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我的 FASTQ / VCF 太大讀不進記憶體」</strong> → <code>generator</code> + <code>itertools</code></span><span data-lang="en"><strong>"My FASTQ/VCF doesn't fit in RAM"</strong> → <code>generator</code> + <code>itertools</code></span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我想對許多函式加上同樣的計時 / cache / retry」</strong> → <code>decorator</code></span><span data-lang="en"><strong>"I want to add timing/cache/retry to many functions"</strong> → <code>decorator</code></span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要確保臨時檔/連線一定被釋放」</strong> → <code>context manager</code></span><span data-lang="en"><strong>"I must guarantee cleanup of temp files/connections"</strong> → <code>context manager</code></span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要打 100 個 REST API」</strong> → <code>async / await</code> (I/O bound)；<strong>「我要對 100 樣本做重 CPU 計算」</strong> → multiprocessing (B3)</span><span data-lang="en"><strong>"I'm calling 100 REST APIs"</strong> → <code>async/await</code>; <strong>"100 samples, heavy CPU"</strong> → multiprocessing (B3)</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> 下列何者最適合用 <code>generator</code> 而不是 list comprehension？</p>
+<p data-lang="en"><strong>Q1.</strong> Which is best suited for a <code>generator</code> rather than a list comprehension?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 把 1000 個整數 +1 並馬上加總</span><span data-lang="en">A. Add 1 to 1000 ints and sum immediately</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 已知資料量小且需要重複迭代</span><span data-lang="en">B. Small data that needs repeated iteration</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 串流讀取 100GB FASTQ，每次只處理一筆 read</span><span data-lang="en">C. Streaming a 100GB FASTQ, one read at a time</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 將資料轉成 NumPy array 並一次給 sklearn</span><span data-lang="en">D. Convert to NumPy array, feed to sklearn at once</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Generator 適合資料量大、單次線性掃描、不需重複迭代的情境，典型用途就是 FASTQ/VCF 串流。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Generators shine when data is large, scanned once linearly, with no repeated iteration — FASTQ/VCF streaming is the canonical case.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 把 <code>requests.get()</code> 包進 <code>async def</code> 並用 <code>asyncio.gather()</code> 並行呼叫 100 次——預期會發生什麼？</p>
+<p data-lang="en"><strong>Q2.</strong> Wrapping <code>requests.get()</code> in <code>async def</code> and calling 100× with <code>asyncio.gather()</code> — what happens?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 100 個請求真正並行，速度提升 100 倍</span><span data-lang="en">A. 100 requests truly run in parallel, 100× speedup</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 請求仍序列化執行，因為 requests 是 blocking I/O，會 block event loop</span><span data-lang="en">B. Still sequential — requests is blocking I/O and blocks the event loop</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 速度提升取決於 CPU 核心數</span><span data-lang="en">C. Speedup scales with CPU cores</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. Python 會自動轉成 async 版本</span><span data-lang="en">D. Python auto-converts to async</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>async/await 需要對應的 async-aware client (httpx.AsyncClient、aiohttp)。blocking I/O 函式會 block event loop 讓 gather 退化成序列化。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> async/await needs async-aware clients (httpx.AsyncClient, aiohttp). Blocking I/O functions block the event loop and reduce gather to sequential.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> 下列關於 <code>@dataclass(frozen=True)</code> 的描述何者正確？(多選)</p>
+<p data-lang="en"><strong>Q3.</strong> Which statements about <code>@dataclass(frozen=True)</code> are correct? (multi)</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 物件不可修改 (immutable)，可作為 dict 的 key</span><span data-lang="en">A. Object is immutable, usable as a dict key</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 自動進行 runtime 型別檢查</span><span data-lang="en">B. Automatically validates types at runtime</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 可以從 YAML 自動載入並驗證</span><span data-lang="en">C. Auto-loads & validates from YAML</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 比一般 dataclass 節省記憶體 (僅 frozen 屬性，與 slots 是不同概念)</span><span data-lang="en">D. Saves RAM (frozen and slots are different things)</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>frozen 讓物件 immutable，因此可雜湊。B/C 是 Pydantic 的功能。記憶體節省屬於 <code>slots=True</code>，與 frozen 是兩件事。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> frozen makes the object immutable, hence hashable. B/C are Pydantic. Memory savings belong to <code>slots=True</code>, a separate feature.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="index.html"><span class="nav-dir" data-zh="← 回到目錄" data-en="← Back to Hub">← 回到目錄</span><span class="nav-title" data-zh="教程首頁" data-en="Tutorial Hub">教程首頁</span></a>
+<a href="advanced-r.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="A2 · 進階 R 與 tidy eval" data-en="A2 · Advanced R & tidy eval">A2 · 進階 R 與 tidy eval</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · A1 進階 Python</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Interactive: generator memory simulator
+function updateMemSim(){
+  const gb = +document.getElementById('sliderFq').value;
+  document.getElementById('fqsize').textContent = gb;
+  const readAll = gb * 2.5; // GB peak: gzipped expanded + buffers
+  const stream  = 10 + gb * 0.1; // ~constant tens of MB
+  document.getElementById('statReadAll').textContent = `read-all: ${readAll.toFixed(1)} GB peak RAM`;
+  document.getElementById('statStream').textContent  = `stream: ${stream.toFixed(0)} MB peak RAM`;
+  document.getElementById('statRatio').textContent   = `${(readAll*1000/stream).toFixed(0)} × less RAM`;
+}
+document.getElementById('sliderFq').addEventListener('input', updateMemSim);
+updateMemSim();
+</script>
+</body></html>

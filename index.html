@@ -1,0 +1,100 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>生醫資訊程式設計 (進階) · Advanced Bioinformatics Programming</title>
+<meta name="description" content="從基礎語法到工程化交付——進階生醫資訊程式設計的 20 個主題互動式教程：效能優化、平行運算、資料工程、軟體工程、再現性與部署。">
+<link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="big-data-tables.html">BigData</a></li>
+    <li><a href="git-collaboration.html">Git</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="package-development.html">Pkg</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+    <li><a href="hpc-cloud-bio.html">HPC</a></li>
+  </ul>
+</div></nav>
+
+<header class="hub-hero"><div style="position:relative;z-index:1;">
+<div class="tagline">// ADVANCED BIOINFORMATICS PROGRAMMING</div>
+<h1 data-zh="生醫資訊程式設計 (進階)" data-en="Advanced Bioinformatics Programming">生醫資訊程式設計 (進階)</h1>
+<p data-lang="zh">從「能跑」到「可重現、可擴充、可部署」——20 個進階主題帶你跨越從研究腳本到工程級分析管線的鴻溝。涵蓋進階語法、效能優化、平行 / GPU、資料工程、軟體工程與雲端部署，R 與 Python 並重。</p>
+<p data-lang="en">From "it runs on my machine" to "reproducible, scalable, deployable" — 20 advanced topics bridge the gap between research scripts and engineering-grade pipelines. Covers advanced language idioms, performance, parallel/GPU, data engineering, software engineering, and cloud deployment — R and Python equal weight.</p>
+</div></header>
+
+<!-- ========== BLOCK A ========== -->
+<h2 class="hub-section-title"><span>A</span> <span data-zh="進階語法與慣用法" data-en="Advanced Syntax & Idioms">進階語法與慣用法</span></h2>
+<div class="hub-steps-grid">
+  <a href="advanced-python.html" class="hub-card"><div class="hub-emoji">🐍</div><span class="step-num">A1 · Python</span><h3 data-zh="進階 Python" data-en="Advanced Python">進階 Python</h3><p data-lang="zh">Type hints、dataclasses、generator、decorator、context manager、async/await——把研究腳本升級為函式庫等級。</p><p data-lang="en">Type hints, dataclasses, generators, decorators, context managers, async/await — level up from scripts to library-grade code.</p></a>
+
+  <a href="advanced-r.html" class="hub-card"><div class="hub-emoji">📊</div><span class="step-num">A2 · R</span><h3 data-zh="進階 R 與 tidy eval" data-en="Advanced R & Tidy Eval">進階 R 與 tidy eval</h3><p data-lang="zh">S4 / R6 物件系統、環境 / 詞法作用域、NSE 與 tidy eval、metaprogramming——掌握 Bioconductor 風格寫法。</p><p data-lang="en">S4/R6 OOP, environments & lexical scope, NSE & tidy eval, metaprogramming — master the Bioconductor coding style.</p></a>
+
+  <a href="functional-programming.html" class="hub-card"><div class="hub-emoji">λ</div><span class="step-num">A3 · FP</span><h3 data-zh="函數式程式設計" data-en="Functional Programming">函數式程式設計</h3><p data-lang="zh">純函數、map/reduce/filter、purrr、functools、closures——以可組合的小函數構築可預測的分析流程。</p><p data-lang="en">Pure functions, map/reduce/filter, purrr, functools, closures — build predictable pipelines from composable small functions.</p></a>
+
+  <a href="error-handling-logging.html" class="hub-card"><div class="hub-emoji">🛡️</div><span class="step-num">A4 · Robustness</span><h3 data-zh="錯誤處理與結構化日誌" data-en="Error Handling & Logging">錯誤處理與結構化日誌</h3><p data-lang="zh">try/except、tryCatch、自訂例外、結構化日誌 (loguru / logger / futile)、防禦式程式設計——讓 pipeline 失敗時告訴你發生了什麼。</p><p data-lang="en">try/except, tryCatch, custom exceptions, structured logging (loguru/logger/futile), defensive programming — make pipelines tell you when and why they failed.</p></a>
+</div>
+
+<!-- ========== BLOCK B ========== -->
+<h2 class="hub-section-title"><span>B</span> <span data-zh="效能與運算" data-en="Performance & Computation">效能與運算</span></h2>
+<div class="hub-steps-grid">
+  <a href="profiling-optimization.html" class="hub-card"><div class="hub-emoji">⏱️</div><span class="step-num">B1 · Profile</span><h3 data-zh="效能剖析與最佳化" data-en="Profiling & Optimization">效能剖析與最佳化</h3><p data-lang="zh">cProfile、line_profiler、memory_profiler、profvis、bench——先量化再優化，識別 hotspot 而非盲目重構。</p><p data-lang="en">cProfile, line_profiler, memory_profiler, profvis, bench — measure first, optimize hotspots, never guess.</p></a>
+
+  <a href="compiled-acceleration.html" class="hub-card"><div class="hub-emoji">🚀</div><span class="step-num">B2 · Compile</span><h3 data-zh="向量化與編譯加速" data-en="Vectorization & Compilation">向量化與編譯加速</h3><p data-lang="zh">Numba、Cython、Rcpp、NumPy 向量化、data.table——以 10×–1000× 速度跑同一個 for 迴圈。</p><p data-lang="en">Numba, Cython, Rcpp, NumPy vectorization, data.table — same loop, 10×–1000× faster.</p></a>
+
+  <a href="parallel-computing.html" class="hub-card"><div class="hub-emoji">⚡</div><span class="step-num">B3 · Parallel</span><h3 data-zh="平行運算" data-en="Parallel Computing">平行運算</h3><p data-lang="zh">multiprocessing、concurrent.futures、joblib、future / foreach、BiocParallel——CPU 核心榨好榨滿。</p><p data-lang="en">multiprocessing, concurrent.futures, joblib, future/foreach, BiocParallel — squeeze every core.</p></a>
+
+  <a href="gpu-bioinformatics.html" class="hub-card"><div class="hub-emoji">🎛️</div><span class="step-num">B4 · GPU</span><h3 data-zh="GPU 加速生醫運算" data-en="GPU for Bioinformatics">GPU 加速生醫運算</h3><p data-lang="zh">CuPy / RAPIDS (cuDF, cuML)、JAX、PyTorch tensors、rapids-singlecell——百萬細胞分析從小時到分鐘。</p><p data-lang="en">CuPy/RAPIDS (cuDF, cuML), JAX, PyTorch, rapids-singlecell — million-cell analysis from hours to minutes.</p></a>
+</div>
+
+<!-- ========== BLOCK C ========== -->
+<h2 class="hub-section-title"><span>C</span> <span data-zh="資料工程" data-en="Data Engineering">資料工程</span></h2>
+<div class="hub-steps-grid">
+  <a href="bio-data-formats.html" class="hub-card"><div class="hub-emoji">📦</div><span class="step-num">C1 · Formats</span><h3 data-zh="生醫資料格式" data-en="Bio Data Formats">生醫資料格式</h3><p data-lang="zh">HDF5、Zarr、Parquet、Arrow、AnnData / MuData、BAM / CRAM / VCF 索引——選對格式才不會被 I/O 拖死。</p><p data-lang="en">HDF5, Zarr, Parquet, Arrow, AnnData/MuData, indexed BAM/CRAM/VCF — the right format saves you from I/O hell.</p></a>
+
+  <a href="big-data-tables.html" class="hub-card"><div class="hub-emoji">🗃️</div><span class="step-num">C2 · BigTable</span><h3 data-zh="大型資料表處理" data-en="Big Data Tables">大型資料表處理</h3><p data-lang="zh">Polars (lazy)、Dask、Spark、data.table、DuckDB、out-of-core——當資料比 RAM 大三倍時的解法。</p><p data-lang="en">Polars (lazy), Dask, Spark, data.table, DuckDB, out-of-core — when data is 3× your RAM.</p></a>
+
+  <a href="databases-bio.html" class="hub-card"><div class="hub-emoji">🗄️</div><span class="step-num">C3 · DB</span><h3 data-zh="資料庫與 REST API" data-en="Databases & REST APIs">資料庫與 REST API</h3><p data-lang="zh">SQLite / PostgreSQL、MongoDB、Ensembl REST、UCSC、UniProt API、SQLAlchemy / dbplyr——讓 SQL 為基因組查詢服務。</p><p data-lang="en">SQLite/PostgreSQL, MongoDB, Ensembl REST, UCSC, UniProt API, SQLAlchemy/dbplyr — SQL meets genomics.</p></a>
+
+  <a href="data-validation-pipelines.html" class="hub-card"><div class="hub-emoji">✅</div><span class="step-num">C4 · Validate</span><h3 data-zh="資料驗證與 ETL" data-en="Data Validation & ETL">資料驗證與 ETL</h3><p data-lang="zh">Pandera、great_expectations、pointblank、Schema 驗證、ETL 範式——讓 garbage in 在第一步就被攔下。</p><p data-lang="en">Pandera, great_expectations, pointblank, schema validation, ETL patterns — stop garbage at step 0.</p></a>
+</div>
+
+<!-- ========== BLOCK D ========== -->
+<h2 class="hub-section-title"><span>D</span> <span data-zh="軟體工程" data-en="Software Engineering">軟體工程</span></h2>
+<div class="hub-steps-grid">
+  <a href="git-collaboration.html" class="hub-card"><div class="hub-emoji">🌿</div><span class="step-num">D1 · Git</span><h3 data-zh="Git 進階協作" data-en="Advanced Git Collaboration">Git 進階協作</h3><p data-lang="zh">rebase、cherry-pick、hooks、submodule、Git LFS、GitHub flow、PR review——從個人腳本到實驗室共筆。</p><p data-lang="en">rebase, cherry-pick, hooks, submodules, Git LFS, GitHub flow, PR reviews — from solo to lab-wide.</p></a>
+
+  <a href="testing-strategies.html" class="hub-card"><div class="hub-emoji">🧪</div><span class="step-num">D2 · Test</span><h3 data-zh="測試策略" data-en="Testing Strategies">測試策略</h3><p data-lang="zh">pytest、testthat、fixtures、mocking、property-based、coverage、CI——讓改 code 不再怕壞舊功能。</p><p data-lang="en">pytest, testthat, fixtures, mocking, property-based, coverage, CI — refactor without fear.</p></a>
+
+  <a href="package-development.html" class="hub-card"><div class="hub-emoji">📚</div><span class="step-num">D3 · Package</span><h3 data-zh="套件開發與發布" data-en="Package Development">套件開發與發布</h3><p data-lang="zh">pyproject.toml、uv / poetry、PyPI、R 套件骨架、CRAN / Bioconductor 投稿、pkgdown / Sphinx 文件。</p><p data-lang="en">pyproject.toml, uv/poetry, PyPI, R package skeleton, CRAN/Bioconductor submission, pkgdown/Sphinx docs.</p></a>
+
+  <a href="api-web-services.html" class="hub-card"><div class="hub-emoji">🌐</div><span class="step-num">D4 · API</span><h3 data-zh="API 與 Web 服務" data-en="APIs & Web Services">API 與 Web 服務</h3><p data-lang="zh">FastAPI、plumber、Streamlit、Shiny、REST / GraphQL、WebSockets——把分析結果開放給協作者點擊探索。</p><p data-lang="en">FastAPI, plumber, Streamlit, Shiny, REST/GraphQL, WebSockets — turn analyses into clickable services.</p></a>
+</div>
+
+<!-- ========== BLOCK E ========== -->
+<h2 class="hub-section-title"><span>E</span> <span data-zh="再現性與部署" data-en="Reproducibility & Deployment">再現性與部署</span></h2>
+<div class="hub-steps-grid">
+  <a href="docker-containers.html" class="hub-card"><div class="hub-emoji">🐳</div><span class="step-num">E1 · Docker</span><h3 data-zh="容器化 (Docker / Apptainer)" data-en="Containers (Docker/Apptainer)">容器化 (Docker / Apptainer)</h3><p data-lang="zh">Dockerfile、multi-stage build、BioContainers、Apptainer / Singularity (HPC)、Rocker、bioconductor_docker。</p><p data-lang="en">Dockerfile, multi-stage builds, BioContainers, Apptainer/Singularity (HPC), Rocker, bioconductor_docker.</p></a>
+
+  <a href="workflow-engines.html" class="hub-card"><div class="hub-emoji">🔗</div><span class="step-num">E2 · Workflow</span><h3 data-zh="工作流引擎" data-en="Workflow Engines">工作流引擎</h3><p data-lang="zh">Snakemake、Nextflow DSL2、WDL / Cromwell、nf-core、Airflow——把 10,000 樣本管線寫成宣告式語法。</p><p data-lang="en">Snakemake, Nextflow DSL2, WDL/Cromwell, nf-core, Airflow — 10K-sample pipelines, declaratively.</p></a>
+
+  <a href="hpc-cloud-bio.html" class="hub-card"><div class="hub-emoji">☁️</div><span class="step-num">E3 · Cloud</span><h3 data-zh="HPC 與雲端" data-en="HPC & Cloud">HPC 與雲端</h3><p data-lang="zh">SLURM / PBS、AWS Batch / Lambda、GCP、S3、Terra、DNAnexus、spot 計算——大規模分析的成本帳。</p><p data-lang="en">SLURM/PBS, AWS Batch/Lambda, GCP, S3, Terra, DNAnexus, spot pricing — the math of large-scale analysis.</p></a>
+
+  <a href="reproducible-science.html" class="hub-card"><div class="hub-emoji">📓</div><span class="step-num">E4 · Reproduce</span><h3 data-zh="可再現研究" data-en="Reproducible Science">可再現研究</h3><p data-lang="zh">Quarto / RMarkdown、Jupyter、renv / conda-lock / uv.lock、CWL、FAIR data、TURING way——讓 5 年後的自己還跑得起來。</p><p data-lang="en">Quarto/RMarkdown, Jupyter, renv/conda-lock/uv.lock, CWL, FAIR data, TURING way — future-you can still run it.</p></a>
+</div>
+
+<!-- ========== Block F: Companions ========== -->
+<h2 class="hub-section-title"><span>+</span> <span data-zh="延伸學習" data-en="Further Learning">延伸學習</span></h2>
+<div class="hub-steps-grid">
+  <a href="references/index.html" class="hub-card"><div class="hub-emoji">📚</div><span class="step-num">References</span><h3 data-zh="參考資料佐證" data-en="References &amp; Citations">參考資料佐證</h3><p data-lang="zh">20 主題的學術論文、官方文件、Best Practices 與工具書整理，附 DOI / URL 與疑義注記。</p><p data-lang="en">Academic papers, official docs, best practices, and books — with DOI/URL links and errata notes for all 20 topics.</p></a>
+  <a href="adv-bioinfo-prog-quiz/index.html" class="hub-card"><div class="hub-emoji">📝</div><span class="step-num">Quiz</span><h3 data-zh="互動式考題 (200 題)" data-en="Interactive Quiz (200 Questions)">互動式考題 (200 題)</h3><p data-lang="zh">涵蓋 20 主題的單選 / 多選 / 是非題，內建錯題複習、隨機練習、多使用者進度。</p><p data-lang="en">Single, multiple-choice, and true/false questions covering all 20 topics, with wrong-answer review, random practice, and multi-user progress.</p></a>
+</div>
+
+<div style="height:60px"></div>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+</body></html>

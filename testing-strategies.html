@@ -1,0 +1,559 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>D2: 測試策略 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html" class="active">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK D · TOPIC 14 / 20</div>
+<h1 data-zh="測試策略：pytest、testthat、property-based 與 CI" data-en="Testing Strategies: pytest, testthat, property-based, CI">測試策略：pytest、testthat、property-based 與 CI</h1>
+<p class="subtitle" data-lang="zh">沒有測試的 pipeline 就像沒有 control 的實驗——你不知道明天它會不會壞。本章教 testing pyramid、pytest fixtures、testthat snapshot、hypothesis property-based、coverage、GitHub Actions、nf-test。</p>
+<p class="subtitle" data-lang="en">A pipeline without tests is an experiment without a control — you won't know it broke tomorrow. Covers the testing pyramid, pytest fixtures, testthat snapshots, hypothesis property-based, coverage, GitHub Actions, nf-test.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼研究程式需要測試？" data-en="Why do research scripts need tests?">為什麼研究程式需要測試？</h2>
+<div data-lang="zh">
+<p>「我每次都人工目視 figure，沒問題」——這在 1 個樣本時可行，到 100 個樣本就崩潰。三類痛點：</p>
+<ul>
+<li><strong>Silent regression：</strong>升級 scanpy 0.10 → 0.11，<code>sc.pp.normalize_total</code> 預設改變，你的 UMAP 變形——但沒人發現，因為沒有測試斷言 cluster 數。</li>
+<li><strong>邊界 bug：</strong>你的程式在 hg38 跑得好，到 mm10 因為 chrY 不存在而 crash——沒測過小鼠檔案就不知道。</li>
+<li><strong>refactor 恐懼：</strong>不敢動 6 個月前的 QC code，因為沒有測試守住既有行為。</li>
+</ul>
+<p>本章六個主題：<strong>testing pyramid</strong>、<strong>pytest fixtures</strong>、<strong>testthat + snapshot</strong>、<strong>property-based testing</strong>、<strong>coverage</strong>、<strong>CI (GitHub Actions + nf-test)</strong>。</p>
+</div>
+<div data-lang="en">
+<p>"I just eyeball every figure" — works for 1 sample, breaks at 100. Three pain points:</p>
+<ul>
+<li><strong>Silent regression:</strong> Upgrading scanpy 0.10 → 0.11 changes <code>sc.pp.normalize_total</code> defaults; your UMAP shifts — undetected, because no test asserted the cluster count.</li>
+<li><strong>Edge-case bugs:</strong> Code works on hg38 but crashes on mm10 because chrY is missing — undetected until you actually try mouse data.</li>
+<li><strong>Refactor fear:</strong> You can't touch six-month-old QC code because no tests guard the existing behaviour.</li>
+</ul>
+<p>The six topics: <strong>testing pyramid</strong>, <strong>pytest fixtures</strong>, <strong>testthat + snapshots</strong>, <strong>property-based</strong>, <strong>coverage</strong>, <strong>CI (GitHub Actions + nf-test)</strong>.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>口訣：</strong>「測試不是要找 bug，而是要在 refactor / dependency upgrade 時讓你敢動。」</span>
+<span data-lang="en"><strong>Mantra:</strong> "Tests aren't for finding bugs — they're so you can refactor and upgrade dependencies without fear."</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: The Pyramid ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Testing Pyramid — 70/20/10 法則" data-en="I. The Testing Pyramid — 70/20/10 rule">一、Testing Pyramid — 70/20/10 法則</h2>
+<div data-lang="zh"><p>金字塔從下而上：<strong>單元測試 (Unit)</strong> 多而快、<strong>整合測試 (Integration)</strong> 少而中速、<strong>端到端 (E2E)</strong> 極少而慢。健康的測試集大致 70% unit、20% integration、10% e2e。</p></div>
+<div data-lang="en"><p>Bottom-up: <strong>Unit</strong> tests are many and fast, <strong>Integration</strong> tests are fewer and medium, <strong>E2E</strong> tests are very few and slow. A healthy suite is roughly 70% unit, 20% integration, 10% e2e.</p></div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="層級" data-en="Layer">層級</th>
+<th data-zh="範圍" data-en="Scope">範圍</th>
+<th data-zh="速度" data-en="Speed">速度</th>
+<th data-zh="生醫範例" data-en="Bioinfo example">生醫範例</th>
+<th data-zh="比例建議" data-en="Suggested share">比例</th>
+</tr></thead><tbody>
+<tr><td>Unit</td><td data-zh="單一函式 / class" data-en="One function / class">單一函式</td><td>&lt; 1ms</td><td data-zh="<code>gc_content('ATCG') == 0.5</code>" data-en="<code>gc_content('ATCG') == 0.5</code>"><code>gc_content('ATCG') == 0.5</code></td><td>70%</td></tr>
+<tr><td>Integration</td><td data-zh="多模組互動" data-en="Multi-module">多模組</td><td>10ms–1s</td><td data-zh="QC + normalize + cluster pipeline 對 mini.h5ad" data-en="QC + normalize + cluster on mini.h5ad">mini.h5ad 跑 QC→cluster</td><td>20%</td></tr>
+<tr><td>E2E</td><td data-zh="整條 pipeline" data-en="Whole pipeline">整條 pipeline</td><td>10s–10min</td><td data-zh="Nextflow 全跑 1000 reads sample" data-en="Full Nextflow run on 1000-read sample">Nextflow 全跑迷你樣本</td><td>10%</td></tr>
+</tbody></table>
+
+<div class="interactive-panel">
+<h3 data-zh="測試金字塔預算規劃器" data-en="Test Pyramid Budget Planner">測試金字塔預算規劃器</h3>
+<p data-lang="zh" style="font-size:.92rem">輸入你的測試數量；面板會診斷是否健康。</p>
+<p data-lang="en" style="font-size:.92rem">Enter your test counts; the panel diagnoses balance.</p>
+<div class="slider-group"><label>Unit <span id="uV">70</span></label>
+<input type="range" id="sU" min="0" max="500" value="70" step="5"></div>
+<div class="slider-group"><label>Integration <span id="iV">20</span></label>
+<input type="range" id="sI" min="0" max="200" value="20" step="2"></div>
+<div class="slider-group"><label>E2E <span id="eV">5</span></label>
+<input type="range" id="sE" min="0" max="50" value="5" step="1"></div>
+<div class="sim-stats">
+  <span class="sim-stat info" id="pyrMix">Mix: — / — / —</span>
+  <span class="sim-stat" id="pyrDiag">diagnosis: —</span>
+  <span class="sim-stat" id="pyrTime">est. CI time: —</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 3: pytest essentials ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、pytest — fixtures, parametrize, monkeypatch" data-en="II. pytest — fixtures, parametrize, monkeypatch">二、pytest — fixtures, parametrize, monkeypatch</h2>
+<div data-lang="zh"><p>pytest 是 Python 生態最常用的測試框架，比 unittest 簡潔，支援 fixture (共享 setup)、parametrize (一個測試多筆資料)、monkeypatch (替換物件)、tmp_path (隔離暫存資料夾)。</p></div>
+<div data-lang="en"><p>pytest is the de-facto Python test framework. Lighter than unittest; first-class fixtures (shared setup), parametrize (one test, many cases), monkeypatch (replace objects), tmp_path (isolated tmp dir).</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">test_qc.py</button>
+<button class="code-tab-btn">conftest.py</button>
+<button class="code-tab-btn">test_parametrize.py</button>
+<button class="code-tab-btn">test_monkeypatch.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">tests/test_qc.py</span><pre><span class="kw">import</span> pytest
+<span class="kw">from</span> mypkg.qc <span class="kw">import</span> filter_cells
+
+<span class="kw">def</span> <span class="func">test_filter_removes_low_count</span>(tiny_adata):
+    out = filter_cells(tiny_adata, min_counts=<span class="num">100</span>)
+    <span class="kw">assert</span> out.n_obs &lt; tiny_adata.n_obs
+    <span class="kw">assert</span> (out.obs[<span class="str">"total_counts"</span>] &gt;= <span class="num">100</span>).all()
+
+<span class="kw">def</span> <span class="func">test_filter_keeps_all_when_threshold_zero</span>(tiny_adata):
+    out = filter_cells(tiny_adata, min_counts=<span class="num">0</span>)
+    <span class="kw">assert</span> out.n_obs == tiny_adata.n_obs
+
+<span class="kw">def</span> <span class="func">test_filter_invalid_threshold_raises</span>(tiny_adata):
+    <span class="kw">with</span> pytest.raises(ValueError, match=<span class="str">"min_counts must be &gt;= 0"</span>):
+        filter_cells(tiny_adata, min_counts=-<span class="num">5</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">tests/conftest.py — shared fixtures</span><pre><span class="kw">import</span> pytest, numpy <span class="kw">as</span> np, anndata <span class="kw">as</span> ad
+
+<span class="kw">@</span><span class="func">pytest.fixture</span>
+<span class="kw">def</span> <span class="func">tiny_adata</span>():
+    <span class="str">"""200 cells × 50 genes synthetic AnnData."""</span>
+    rng = np.random.default_rng(<span class="num">42</span>)
+    X = rng.poisson(<span class="num">3</span>, size=(<span class="num">200</span>, <span class="num">50</span>))
+    a = ad.AnnData(X)
+    a.obs[<span class="str">"total_counts"</span>] = X.sum(axis=<span class="num">1</span>)
+    <span class="kw">return</span> a
+
+<span class="kw">@</span><span class="func">pytest.fixture</span>(scope=<span class="str">"session"</span>)
+<span class="kw">def</span> <span class="func">mini_fastq</span>(tmp_path_factory):
+    <span class="str">"""One-time mini FASTQ used by many tests."""</span>
+    p = tmp_path_factory.mktemp(<span class="str">"data"</span>) / <span class="str">"mini.fq"</span>
+    p.write_text(<span class="str">"@r1\nACGT\n+\nIIII\n"</span> * <span class="num">100</span>)
+    <span class="kw">return</span> p
+
+<span class="comment"># Real BAM fixtures: keep TINY files (&lt;1MB) in tests/data/ and commit them.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">tests/test_parametrize.py</span><pre><span class="kw">import</span> pytest
+<span class="kw">from</span> mypkg.seq <span class="kw">import</span> gc_content
+
+<span class="kw">@</span><span class="func">pytest.mark.parametrize</span>(<span class="str">"seq,expected"</span>, [
+    (<span class="str">"AAAA"</span>,   <span class="num">0.0</span>),
+    (<span class="str">"GGCC"</span>,   <span class="num">1.0</span>),
+    (<span class="str">"ATCG"</span>,   <span class="num">0.5</span>),
+    (<span class="str">"NNNN"</span>,   <span class="num">0.0</span>),
+    (<span class="str">""</span>,       <span class="num">0.0</span>),
+])
+<span class="kw">def</span> <span class="func">test_gc_content</span>(seq, expected):
+    <span class="kw">assert</span> gc_content(seq) == pytest.approx(expected)
+
+<span class="comment"># One assertion, 5 cases. pytest reports each as a separate test.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">tests/test_monkeypatch.py — mock external services</span><pre><span class="kw">def</span> <span class="func">test_ensembl_lookup_offline</span>(monkeypatch):
+    <span class="kw">def</span> <span class="func">fake_get</span>(url, **kw):
+        <span class="kw">class</span> R:
+            status_code = <span class="num">200</span>
+            <span class="kw">def</span> <span class="func">json</span>(self): <span class="kw">return</span> {<span class="str">"display_name"</span>: <span class="str">"BRCA1"</span>, <span class="str">"id"</span>: <span class="str">"ENSG00000012048"</span>}
+            <span class="kw">def</span> <span class="func">raise_for_status</span>(self): <span class="kw">pass</span>
+        <span class="kw">return</span> R()
+    monkeypatch.setattr(<span class="str">"requests.get"</span>, fake_get)
+
+    <span class="kw">from</span> mypkg.lookup <span class="kw">import</span> get_gene
+    <span class="kw">assert</span> get_gene(<span class="str">"BRCA1"</span>)[<span class="str">"id"</span>] == <span class="str">"ENSG00000012048"</span>
+    <span class="comment"># Test runs in CI with no network — fast + deterministic</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: testthat + R ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、R: testthat + vdiffr snapshot" data-en="III. R: testthat + vdiffr snapshot">三、R: testthat + vdiffr snapshot</h2>
+<div data-lang="zh"><p>R 套件用 <code>testthat</code> 框架。對 ggplot2 圖形可用 <code>vdiffr</code> 做「視覺 snapshot test」——第一次跑會存 SVG，之後每次跑比對是否像素級相同。</p></div>
+<div data-lang="en"><p>R packages use <code>testthat</code>. For ggplot2 figures, <code>vdiffr</code> provides "visual snapshot tests" — first run saves an SVG; subsequent runs compare pixel-for-pixel.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">test-qc.R</button>
+<button class="code-tab-btn">test-snapshot.R</button>
+<button class="code-tab-btn">helper-setup.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">tests/testthat/test-qc.R</span><pre>library(testthat)
+library(mypkg)
+
+test_that(<span class="str">"filter_cells removes low-count cells"</span>, {
+  sce &lt;- make_tiny_sce()
+  out &lt;- filter_cells(sce, min_counts = <span class="num">100</span>)
+  expect_lt(ncol(out), ncol(sce))
+  expect_true(all(out$total_counts &gt;= <span class="num">100</span>))
+})
+
+test_that(<span class="str">"negative threshold errors"</span>, {
+  sce &lt;- make_tiny_sce()
+  expect_error(filter_cells(sce, min_counts = -<span class="num">1</span>),
+               <span class="str">"min_counts must be &gt;= 0"</span>)
+})
+
+test_that(<span class="str">"gc_content boundary cases"</span>, {
+  expect_equal(gc_content(<span class="str">"AAAA"</span>), <span class="num">0</span>)
+  expect_equal(gc_content(<span class="str">"GGCC"</span>), <span class="num">1</span>)
+  expect_equal(gc_content(<span class="str">""</span>),     <span class="num">0</span>)
+})
+</pre></div>
+<div class="code-tab-content"><span class="filename">tests/testthat/test-plot.R — vdiffr snapshot</span><pre>library(testthat)
+library(vdiffr)
+
+test_that(<span class="str">"plot_umap produces stable figure"</span>, {
+  sce &lt;- readRDS(test_path(<span class="str">"fixtures"</span>, <span class="str">"mini-sce.rds"</span>))
+  p &lt;- plot_umap(sce, color_by = <span class="str">"cluster"</span>)
+
+  <span class="comment"># First run: stores tests/testthat/_snaps/plot/umap.svg</span>
+  <span class="comment"># Later runs: compare against stored SVG, fail on diff</span>
+  expect_doppelganger(<span class="str">"umap-by-cluster"</span>, p)
+})
+
+<span class="comment"># When the figure is intentionally changed:</span>
+<span class="comment">#   testthat::snapshot_review()   # interactive web UI to approve diffs</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">tests/testthat/helper-setup.R</span><pre><span class="comment"># Any helper-*.R in tests/testthat/ is auto-sourced before tests</span>
+make_tiny_sce &lt;- function(n_cell = <span class="num">200</span>, n_gene = <span class="num">50</span>) {
+  set.seed(<span class="num">42</span>)
+  X &lt;- matrix(rpois(n_cell * n_gene, lambda = <span class="num">3</span>),
+              nrow = n_gene, ncol = n_cell)
+  sce &lt;- SingleCellExperiment::SingleCellExperiment(
+    assays = list(counts = X)
+  )
+  sce$total_counts &lt;- colSums(X)
+  sce
+}
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: Property-based testing ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="四、Property-based testing — Hypothesis" data-en="IV. Property-based testing — Hypothesis">四、Property-based testing — Hypothesis</h2>
+<div data-lang="zh"><p>傳統 example-based 測試你寫 case 它跑 case；<strong>property-based</strong> 你寫「永遠成立的性質」，框架自動生成上百個輸入去找反例。Python 用 <a href="https://hypothesis.readthedocs.io">hypothesis</a>；R 可用 <code>hedgehog</code> 或 <code>quickcheck</code> 風格。</p></div>
+<div data-lang="en"><p>Example-based: you write cases; the framework runs them. <strong>Property-based</strong>: you write invariants; the framework generates hundreds of inputs trying to falsify them. Python uses <a href="https://hypothesis.readthedocs.io">hypothesis</a>; R has <code>hedgehog</code> or quickcheck-style libraries.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">hypothesis.py</button>
+<button class="code-tab-btn">hedgehog.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">tests/test_props.py</span><pre><span class="kw">from</span> hypothesis <span class="kw">import</span> given, strategies <span class="kw">as</span> st, settings
+<span class="kw">from</span> mypkg.seq <span class="kw">import</span> reverse_complement, gc_content
+
+<span class="comment"># Property 1: reverse_complement is its own inverse</span>
+<span class="kw">@</span><span class="func">given</span>(st.text(alphabet=<span class="str">"ACGT"</span>, min_size=<span class="num">0</span>, max_size=<span class="num">1000</span>))
+<span class="kw">def</span> <span class="func">test_rc_involution</span>(seq):
+    <span class="kw">assert</span> reverse_complement(reverse_complement(seq)) == seq
+
+<span class="comment"># Property 2: GC content is in [0, 1] for any valid sequence</span>
+<span class="kw">@</span><span class="func">given</span>(st.text(alphabet=<span class="str">"ACGTN"</span>, min_size=<span class="num">1</span>))
+<span class="kw">def</span> <span class="func">test_gc_bounded</span>(seq):
+    gc = gc_content(seq)
+    <span class="kw">assert</span> <span class="num">0</span> &lt;= gc &lt;= <span class="num">1</span>
+
+<span class="comment"># Property 3: reverse_complement preserves length</span>
+<span class="kw">@</span><span class="func">given</span>(st.text(alphabet=<span class="str">"ACGT"</span>, min_size=<span class="num">0</span>, max_size=<span class="num">1000</span>))
+<span class="kw">def</span> <span class="func">test_rc_length_preserving</span>(seq):
+    <span class="kw">assert</span> <span class="func">len</span>(reverse_complement(seq)) == <span class="func">len</span>(seq)
+
+<span class="comment"># Hypothesis shrinks failing inputs to the minimal counterexample.</span>
+<span class="comment"># Often finds bugs around empty input, N-only sequences, mixed case.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">tests/testthat/test-props.R</span><pre>library(testthat)
+library(hedgehog)   <span class="comment"># or: library(quickcheck)</span>
+
+<span class="comment"># Property: rev_comp twice returns input</span>
+test_that(<span class="str">"rev_comp is its own inverse"</span>, {
+  gen_seq &lt;- gen.sample(c(<span class="str">"A"</span>,<span class="str">"C"</span>,<span class="str">"G"</span>,<span class="str">"T"</span>), size = gen.int(<span class="num">1000</span>), replace = <span class="kw">TRUE</span>) |&gt;
+    gen.map(\(x) paste0(x, collapse = <span class="str">""</span>))
+
+  forall(gen_seq, function(seq) {
+    expect_equal(rev_comp(rev_comp(seq)), seq)
+  })
+})
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>取捨：</strong>property-based 抓到的 bug 常是「邊界」(空輸入、全 N、超長 read)，但寫測試本身需要更多思考——適合套件級函式，不適合一次性 figure script。</span>
+<span data-lang="en"><strong>Trade-off:</strong> property-based catches edge bugs (empty input, all-N, ultra-long reads), but requires more thought. Use for library-level functions, not one-off figure scripts.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 6: Coverage + mocking ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 5" data-en="TOPIC 5">主題 5</div>
+<h2 data-zh="五、Coverage 與 mocking 外部服務" data-en="V. Coverage & mocking external services">五、Coverage 與 mocking 外部服務</h2>
+<div data-lang="zh"><p><code>coverage.py</code> (Python) 與 <code>covr</code> (R) 量化「哪些行被測試到」。Coverage 不等於品質——100% 行覆蓋仍可能漏 case，但 &lt; 60% 通常表示有大片 dead zone。</p></div>
+<div data-lang="en"><p><code>coverage.py</code> (Python) and <code>covr</code> (R) measure which lines are exercised. Coverage is not a quality metric — 100% line coverage can still miss cases, but &lt; 60% usually signals large dead zones.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">coverage.sh</button>
+<button class="code-tab-btn">covr.R</button>
+<button class="code-tab-btn">responses.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">coverage.sh — Python</span><pre><span class="comment"># Install</span>
+pip install pytest pytest-cov
+
+<span class="comment"># Run with coverage + HTML report</span>
+pytest --cov=mypkg --cov-report=html --cov-report=term-missing
+
+<span class="comment"># pyproject.toml fragment:</span>
+<span class="comment"># [tool.coverage.run]</span>
+<span class="comment"># branch = true</span>
+<span class="comment"># source = ["mypkg"]</span>
+<span class="comment"># [tool.coverage.report]</span>
+<span class="comment"># fail_under = 80</span>
+<span class="comment"># exclude_lines = ["pragma: no cover", "raise NotImplementedError"]</span>
+
+<span class="comment"># Upload to codecov.io in CI</span>
+codecov -t $CODECOV_TOKEN
+</pre></div>
+<div class="code-tab-content"><span class="filename">covr.R — R</span><pre><span class="comment"># In R console</span>
+install.packages(<span class="str">"covr"</span>)
+
+<span class="comment"># Local report</span>
+covr::report()                          <span class="comment"># interactive HTML</span>
+covr::package_coverage()                <span class="comment"># numeric coverage</span>
+
+<span class="comment"># In CI (GitHub Actions): upload to codecov.io</span>
+covr::codecov(token = Sys.getenv(<span class="str">"CODECOV_TOKEN"</span>))
+
+<span class="comment"># Threshold check</span>
+cov &lt;- covr::package_coverage()
+stopifnot(covr::percent_coverage(cov) &gt;= <span class="num">80</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">responses.py / httpx-mock — mock HTTP</span><pre><span class="kw">import</span> responses, requests
+
+<span class="kw">@</span><span class="func">responses.activate</span>
+<span class="kw">def</span> <span class="func">test_ensembl_lookup</span>():
+    responses.add(
+        responses.GET,
+        <span class="str">"https://rest.ensembl.org/lookup/symbol/human/BRCA1"</span>,
+        json={<span class="str">"id"</span>: <span class="str">"ENSG00000012048"</span>, <span class="str">"display_name"</span>: <span class="str">"BRCA1"</span>},
+        status=<span class="num">200</span>,
+    )
+    <span class="kw">from</span> mypkg.lookup <span class="kw">import</span> get_gene
+    <span class="kw">assert</span> get_gene(<span class="str">"BRCA1"</span>)[<span class="str">"id"</span>] == <span class="str">"ENSG00000012048"</span>
+
+<span class="comment"># For async/httpx: use respx or pytest-httpx</span>
+<span class="comment"># For pytest-mock: pip install pytest-mock and use the `mocker` fixture</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 7: CI + nf-test ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 6" data-en="TOPIC 6">主題 6</div>
+<h2 data-zh="六、CI: GitHub Actions + nf-test" data-en="VI. CI: GitHub Actions + nf-test">六、CI: GitHub Actions + nf-test</h2>
+<div data-lang="zh"><p>本機跑得過的測試，要在 CI 也跑得過——三大主流：GitHub Actions、GitLab CI、Circle CI。對 Nextflow pipeline 額外有 <a href="https://www.nf-test.com">nf-test</a>，可斷言 channel 輸出、process 行為、snapshot stdout。</p></div>
+<div data-lang="en"><p>Local pass must equal CI pass. Three majors: GitHub Actions, GitLab CI, Circle CI. For Nextflow pipelines, <a href="https://www.nf-test.com">nf-test</a> asserts channel outputs, process behaviour, snapshot stdout.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">.github/workflows/python.yml</button>
+<button class="code-tab-btn">.github/workflows/r.yml</button>
+<button class="code-tab-btn">nf-test.yml</button>
+</div>
+<div class="code-tab-content active"><span class="filename">.github/workflows/python.yml</span><pre>name: Python tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: [<span class="str">"3.11"</span>, <span class="str">"3.12"</span>]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Install
+        run: uv sync --all-extras
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Test
+        run: uv run pytest --cov=mypkg --cov-report=xml
+      - uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+</pre></div>
+<div class="code-tab-content"><span class="filename">.github/workflows/r.yml</span><pre>name: R-CMD-check
+on: [push, pull_request]
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: ubuntu-latest,  r: <span class="str">'release'</span>}
+          - {os: ubuntu-latest,  r: <span class="str">'devel'</span>}
+          - {os: macos-latest,   r: <span class="str">'release'</span>}
+          - {os: windows-latest, r: <span class="str">'release'</span>}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with: {r-version: ${{ matrix.config.r }}}
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with: {extra-packages: any::rcmdcheck, any::covr}
+      - uses: r-lib/actions/check-r-package@v2
+      - name: Coverage
+        if: matrix.config.os == <span class="str">'ubuntu-latest'</span>
+        run: covr::codecov()
+        shell: Rscript {0}
+</pre></div>
+<div class="code-tab-content"><span class="filename">tests/main.nf.test — nf-test</span><pre>nextflow_pipeline {
+    name <span class="str">"Test main.nf with tiny FASTQ"</span>
+    script <span class="str">"main.nf"</span>
+
+    test(<span class="str">"single sample"</span>) {
+        when {
+            params {
+                input  = <span class="str">"$projectDir/tests/data/samplesheet.csv"</span>
+                outdir = <span class="str">"$outputDir"</span>
+            }
+        }
+        then {
+            assert workflow.success
+            assert path(<span class="str">"$outputDir/qc_report.html"</span>).exists()
+            assert snapshot(
+                path(<span class="str">"$outputDir/counts.tsv"</span>)
+            ).match()
+        }
+    }
+}
+
+<span class="comment"># Run: nf-test test tests/main.nf.test</span>
+<span class="comment"># First run creates snapshot; later runs assert no drift.</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 8: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該寫哪種測試？" data-en="Which kind of test should I write?">該寫哪種測試？</h2>
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「測單一純函式 (gc_content, parse_cigar)」</strong> → pytest / testthat unit test</span><span data-lang="en"><strong>"Pure function (gc_content, parse_cigar)"</strong> → pytest / testthat unit test</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「同一個函式要對許多 case 跑」</strong> → <code>@pytest.mark.parametrize</code></span><span data-lang="en"><strong>"Same function, many inputs"</strong> → <code>@pytest.mark.parametrize</code></span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「測會呼叫 REST API 的函式」</strong> → monkeypatch / responses / httpx-mock</span><span data-lang="en"><strong>"Function calls REST API"</strong> → monkeypatch / responses / httpx-mock</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「測 ggplot/seaborn 圖形不會跑掉」</strong> → vdiffr (R) / pytest-mpl (Python)</span><span data-lang="en"><strong>"Verify a ggplot/seaborn figure stays stable"</strong> → vdiffr (R) / pytest-mpl (Python)</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「想找邊界 bug」</strong> → property-based (hypothesis / hedgehog)</span><span data-lang="en"><strong>"Hunt for edge-case bugs"</strong> → property-based (hypothesis / hedgehog)</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「測整條 Nextflow pipeline」</strong> → nf-test，存 mini fixtures</span><span data-lang="en"><strong>"Test whole Nextflow pipeline"</strong> → nf-test with mini fixtures</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> Testing pyramid 健康的比例最接近？</p>
+<p data-lang="en"><strong>Q1.</strong> Healthiest testing-pyramid mix?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 100% E2E (跑整條 pipeline 才安心)</span><span data-lang="en">A. 100% E2E (only full pipeline matters)</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 50% unit / 50% E2E，無 integration</span><span data-lang="en">B. 50% unit / 50% E2E, no integration</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. ~70% unit / 20% integration / 10% E2E</span><span data-lang="en">C. ~70% unit / 20% integration / 10% E2E</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 只要有 1 個 E2E 就好</span><span data-lang="en">D. Just one E2E is enough</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>E2E 慢、整批失敗，難 debug；unit 快、明確、refactor 友善。整合測試補上「跨模組」缺口。70/20/10 是常見的健康分布。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> E2E is slow and fails in clumps; unit is fast and refactor-friendly. Integration covers cross-module gaps. 70/20/10 is the canonical balance.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 為什麼測試呼叫 REST API 的函式時要 mock？</p>
+<p data-lang="en"><strong>Q2.</strong> Why mock REST calls in tests?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 因為 API 不能在 CI 用</span><span data-lang="en">A. APIs aren't usable in CI</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 測試應快速、確定性、不依賴外部服務、不消耗 quota</span><span data-lang="en">B. Tests must be fast, deterministic, network-free, quota-free</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. mock 比真實 API 更準確</span><span data-lang="en">C. Mocks are more accurate than the real API</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 法律規定不能在 CI 連網</span><span data-lang="en">D. Law forbids network in CI</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>單元測試的價值在於快速、確定、孤立。打真實 API 會：(1) 慢、(2) 不穩定 (網路掛了 CI 紅)、(3) 燒 quota、(4) 同事的 PR 也會 trigger 呼叫。Mocking 用 <code>responses</code> 或 <code>monkeypatch</code>。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> Unit tests must be fast, deterministic, isolated. Real API hits make tests slow, flaky (red CI on network blip), burn quota, and fire on every PR. Use <code>responses</code> or <code>monkeypatch</code>.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> Property-based testing (hypothesis) 跟傳統 example-based testing 最大差別？</p>
+<p data-lang="en"><strong>Q3.</strong> Biggest difference between property-based (hypothesis) and example-based testing?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 你寫「永遠成立的性質」，框架自動生成上百輸入試圖證偽</span><span data-lang="en">A. You declare invariants; the framework generates many inputs to try to falsify them</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. Property-based 不需要寫 assertion</span><span data-lang="en">B. Property-based needs no assertion</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. Property-based 跑得比 unit test 快</span><span data-lang="en">C. Property-based runs faster than unit tests</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. Property-based 只能測純函式以外的東西</span><span data-lang="en">D. Property-based can only test side-effects</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>例：你說「reverse_complement 兩次等於原序列」，hypothesis 自動生成 100 個 random DNA (含空字串、超長、混合大小寫) 來打你的程式。它擅長找邊界 bug 並把反例 shrink 到最小。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> Example: declare "reverse_complement twice equals input"; hypothesis generates 100 random DNAs (including empty, very long, mixed case) and tries to break your code. Excellent at edge-case bugs; shrinks failures to a minimal counterexample.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="git-collaboration.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="D1 · Git 進階協作" data-en="D1 · Advanced Git">D1 · Git 進階協作</span></a>
+<a href="package-development.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="D3 · 套件開發與發布" data-en="D3 · Package Development">D3 · 套件開發與發布</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · D2 測試策略</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Interactive: pyramid budget
+function updatePyramid(){
+  const u = +document.getElementById('sU').value;
+  const i = +document.getElementById('sI').value;
+  const e = +document.getElementById('sE').value;
+  document.getElementById('uV').textContent = u;
+  document.getElementById('iV').textContent = i;
+  document.getElementById('eV').textContent = e;
+  const tot = u+i+e || 1;
+  const pu = (u/tot*100).toFixed(0);
+  const pi = (i/tot*100).toFixed(0);
+  const pe = (e/tot*100).toFixed(0);
+  document.getElementById('pyrMix').textContent = `Mix: ${pu}% / ${pi}% / ${pe}% (U/I/E)`;
+  // CI time estimate: unit 0.05s, integration 1s, e2e 30s
+  const ciSec = u*0.05 + i*1 + e*30;
+  const ciMin = (ciSec/60).toFixed(1);
+  document.getElementById('pyrTime').textContent = `est. CI time: ~${ciMin} min`;
+  // Diagnosis
+  const diag = document.getElementById('pyrDiag');
+  if (tot < 10) {
+    diag.textContent = 'diagnosis: too few tests — add more units';
+    diag.className = 'sim-stat fail';
+  } else if (pe > 25) {
+    diag.textContent = 'diagnosis: top-heavy — CI will be slow and flaky';
+    diag.className = 'sim-stat fail';
+  } else if (pu < 50) {
+    diag.textContent = 'diagnosis: missing unit foundation — bugs slip through';
+    diag.className = 'sim-stat fail';
+  } else if (pu > 60 && pi > 10 && pe > 0 && pe <= 20) {
+    diag.textContent = 'diagnosis: healthy pyramid';
+    diag.className = 'sim-stat pass';
+  } else {
+    diag.textContent = 'diagnosis: workable; aim for ~70/20/10';
+    diag.className = 'sim-stat info';
+  }
+}
+['sU','sI','sE'].forEach(id => document.getElementById(id).addEventListener('input', updatePyramid));
+updatePyramid();
+</script>
+</body></html>

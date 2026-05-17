@@ -1,0 +1,425 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>E4: 可再現研究 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="big-data-tables.html">BigData</a></li>
+    <li><a href="git-collaboration.html">Git</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="package-development.html">Pkg</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+    <li><a href="hpc-cloud-bio.html">HPC</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK E · TOPIC 20 / 20</div>
+<h1 data-zh="可再現研究：讓 5 年後的你還跑得起來" data-en="Reproducible Science: Code that still runs in 5 years">可再現研究：讓 5 年後的你還跑得起來</h1>
+<p class="subtitle" data-lang="zh">「我跑得起來但別人跑不起來」是學界長期之痛——本章涵蓋 5 級再現性階梯、Quarto / Jupyter、環境鎖檔、FAIR data，以及讓論文真正能被別人 (與未來的你) 重現的工程實踐。</p>
+<p class="subtitle" data-lang="en">"It works on my machine but not theirs" is a chronic problem in academia. This chapter covers the 5-level reproducibility ladder, Quarto/Jupyter, env lockfiles, FAIR data, and engineering practices that make papers actually reproducible — by others and by future-you.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Ladder ===== -->
+<section class="section">
+<div class="section-label" data-zh="概念" data-en="CONCEPT">概念</div>
+<h2 data-zh="再現性的五個階梯" data-en="The 5-level reproducibility ladder">再現性的五個階梯</h2>
+<div data-lang="zh">
+<p>學界對「reproducible」一詞長期混淆。Stodden、Peng 等人的分類提供了清晰的階梯——本章建議以此為目標分級：</p>
+</div>
+<div data-lang="en">
+<p>Academia has long conflated "reproducible." A widely-cited taxonomy by Stodden, Peng et al. gives a clean ladder — use these tiers as goals:</p>
+</div>
+
+<div class="workflow">
+<div class="workflow-step" data-step="1"><h4 data-zh="Re-run — 你自己能再跑一次" data-en="Re-run — you can run it again yourself">Re-run — 你自己能再跑一次</h4>
+<p data-lang="zh">最低門檻。注意：很多 Jupyter notebook 在自己機器上時隔 6 個月後也跑不起來——因為套件升級。</p>
+<p data-lang="en">The lowest bar. Note: many Jupyter notebooks can't be rerun even by their author 6 months later — package upgrades break them.</p></div>
+
+<div class="workflow-step" data-step="2"><h4 data-zh="Re-execute — 別人能在同樣資料跑出同樣結果" data-en="Re-execute — others reproduce numbers on same data">Re-execute — 別人能在同樣資料跑出同樣結果</h4>
+<p data-lang="zh">需要：完整 code、原始資料、環境鎖檔。論文 supplementary 應該至少達到這個等級。</p>
+<p data-lang="en">Requires: complete code, raw data, environment lockfile. Paper supplementaries should reach at least this tier.</p></div>
+
+<div class="workflow-step" data-step="3"><h4 data-zh="Reproduce — 別人從相同方法做出相同結論" data-en="Reproduce — others reach the same conclusions">Reproduce — 別人從相同方法做出相同結論</h4>
+<p data-lang="zh">允許不同實作 (例如改用 DESeq2 換成 edgeR) 但仍得到一致結論。考驗的是方法描述清晰度。</p>
+<p data-lang="en">Allows different implementations (e.g., DESeq2 swapped for edgeR) but same conclusions. Tests methods clarity.</p></div>
+
+<div class="workflow-step" data-step="4"><h4 data-zh="Replicate — 別人用新資料得到一致結論" data-en="Replicate — same conclusions on new data">Replicate — 別人用新資料得到一致結論</h4>
+<p data-lang="zh">需要新獨立資料 (independent cohort)。是生物學發現的「黃金標準」。</p>
+<p data-lang="en">Requires an independent dataset. The gold standard of biological findings.</p></div>
+
+<div class="workflow-step" data-step="5"><h4 data-zh="Generalize — 結論在更廣的範圍仍成立" data-en="Generalize — conclusions hold more broadly">Generalize — 結論在更廣的範圍仍成立</h4>
+<p data-lang="zh">跨物種、跨組織、跨疾病的廣泛驗證。論文的最終價值在此。</p>
+<p data-lang="en">Validation across species, tissues, diseases. Where a paper's lasting value lives.</p></div>
+</div>
+
+<div class="callout info"><span class="callout-icon">📘</span><div>
+<span data-lang="zh"><strong>本章重點：</strong>第 1-3 級是「程式工程問題」，是本章可解決的。第 4-5 級需要新實驗，超出工程範疇。</span>
+<span data-lang="en"><strong>This chapter's scope:</strong> Tiers 1-3 are engineering problems and solvable here. Tiers 4-5 require new experiments, beyond engineering.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Quarto ===== -->
+<section class="section">
+<div class="section-label" data-zh="工具 1" data-en="TOOL 1">工具 1</div>
+<h2 data-zh="Quarto — RMarkdown 的後繼者" data-en="Quarto — successor to RMarkdown">Quarto — RMarkdown 的後繼者</h2>
+<div data-lang="zh"><p>Quarto 是 Posit (前 RStudio) 推出的下一代語言無關文件系統，支援 R / Python / Julia / Observable JS 在同一份 .qmd 檔案。一份 .qmd 可同時 render 為 HTML / PDF / docx / 投影片 / 整本書。對於需要嵌入分析的 supplementary 是首選。</p></div>
+<div data-lang="en"><p>Quarto is Posit's (formerly RStudio) language-agnostic next-gen document system: R / Python / Julia / Observable JS in one <code>.qmd</code> file. One source renders to HTML / PDF / docx / slides / a full book. Ideal for analysis-embedded supplementaries.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">analysis.qmd</button>
+<button class="code-tab-btn">_quarto.yml</button>
+<button class="code-tab-btn">parameterized</button>
+</div>
+<div class="code-tab-content active"><span class="filename">analysis.qmd — single-file paper supplement</span><pre><span class="kw">---</span>
+<span class="kw">title:</span> <span class="str">"Differential expression in IPF lungs"</span>
+<span class="kw">author:</span> Charlene
+<span class="kw">date:</span> <span class="str">"2026-05-15"</span>
+<span class="kw">format:</span>
+  <span class="kw">html:</span> { toc: true, code-fold: true, theme: cosmo }
+  <span class="kw">pdf:</span>  { documentclass: scrartcl }
+<span class="kw">execute:</span>
+  echo: true
+  warning: false
+  cache: true
+<span class="kw">---</span>
+
+<span class="comment"># Methods</span>
+
+The fastq files were trimmed with fastp v0.23.4...
+
+<span class="str">```{python}</span>
+<span class="comment">#| label: fig-volcano</span>
+<span class="comment">#| fig-cap: "Volcano plot of IPF vs control."</span>
+<span class="kw">import</span> scanpy <span class="kw">as</span> sc, pandas <span class="kw">as</span> pd
+adata = sc.read_h5ad(<span class="str">"data/ipf.h5ad"</span>)
+sc.tl.rank_genes_groups(adata, <span class="str">"condition"</span>, method=<span class="str">"wilcoxon"</span>)
+<span class="comment"># ...plot...</span>
+<span class="str">```</span>
+
+<span class="comment"># Results</span>
+
+We identified @fig-volcano shows ...
+
+<span class="str">```{r}</span>
+<span class="kw">library</span>(DESeq2)
+<span class="comment"># R chunk in the SAME document</span>
+<span class="str">```</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">_quarto.yml — project-level config</span><pre>project:
+  type: website
+  output-dir: _site
+
+website:
+  title: <span class="str">"Lab Supplement"</span>
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: analysis.qmd
+        text: <span class="str">"Main analysis"</span>
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    code-fold: <span class="kw">true</span>
+    code-tools: <span class="kw">true</span>
+
+execute:
+  freeze: auto       <span class="comment"># cache compiled chunks; invalidate on source change</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">parameterized — generate one report per sample</span><pre><span class="kw">---</span>
+<span class="kw">title:</span> <span class="str">"QC report: `r params$sample`"</span>
+<span class="kw">params:</span>
+  sample: SRR001
+  threshold: 200
+<span class="kw">---</span>
+
+<span class="str">```{r}</span>
+library(Seurat)
+obj &lt;- readRDS(paste0(<span class="str">"data/"</span>, params$sample, <span class="str">".rds"</span>))
+VlnPlot(obj, features = <span class="str">"nFeature_RNA"</span>) +
+  geom_hline(yintercept = params$threshold)
+<span class="str">```</span>
+
+<span class="comment"># Shell: render once per sample</span>
+<span class="comment"># for s in SRR001 SRR002 SRR003; do</span>
+<span class="comment">#   quarto render qc_report.qmd -P sample:$s --output-dir reports/$s</span>
+<span class="comment"># done</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 3: Lockfiles ===== -->
+<section class="section">
+<div class="section-label" data-zh="工具 2" data-en="TOOL 2">工具 2</div>
+<h2 data-zh="環境鎖檔 — 你的時間旅行裝置" data-en="Lockfiles — your time machine">環境鎖檔 — 你的時間旅行裝置</h2>
+<div data-lang="zh">
+<p><code>pip freeze &gt; requirements.txt</code> 是不夠的。它只記錄直接依賴，不夠精確；也不記錄 OS-level 二進位。完整方案：</p>
+</div>
+<div data-lang="en">
+<p><code>pip freeze &gt; requirements.txt</code> is not enough — it captures direct deps only, lacks precision, and ignores OS-level binaries. Complete options:</p>
+</div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="工具" data-en="Tool">工具</th>
+<th data-zh="語言" data-en="Language">語言</th>
+<th data-zh="鎖檔" data-en="Lockfile">鎖檔</th>
+<th data-zh="跨平台?" data-en="Cross-platform?">跨平台?</th>
+<th data-zh="OS deps?" data-en="OS deps?">OS deps?</th>
+</tr></thead><tbody>
+<tr><td><code>pip + venv</code></td><td>Python</td><td>requirements.txt</td><td data-zh="部分" data-en="Partial">部分</td><td>❌</td></tr>
+<tr><td><code>uv lock</code></td><td>Python</td><td>uv.lock</td><td>✅</td><td>❌</td></tr>
+<tr><td><code>poetry lock</code></td><td>Python</td><td>poetry.lock</td><td>✅</td><td>❌</td></tr>
+<tr><td><code>conda-lock</code></td><td data-zh="Python+R+CLI" data-en="Python+R+CLI">Python+R+CLI</td><td>conda-lock.yml</td><td>✅</td><td data-zh="✅ (conda 套件)" data-en="✅ (conda pkgs)">✅</td></tr>
+<tr><td><code>renv::snapshot()</code></td><td>R</td><td>renv.lock</td><td data-zh="部分" data-en="Partial">部分</td><td>❌</td></tr>
+<tr><td><code>Dockerfile + image digest</code></td><td data-zh="任何" data-en="Any">任何</td><td>image SHA256</td><td>✅</td><td>✅</td></tr>
+<tr><td><code>Nix / Guix</code></td><td data-zh="任何" data-en="Any">任何</td><td>flake.lock</td><td>✅</td><td>✅</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">uv.lock</button>
+<button class="code-tab-btn">renv.lock</button>
+<button class="code-tab-btn">conda-lock</button>
+</div>
+<div class="code-tab-content active"><span class="filename">uv (Python) — 2025 modern standard</span><pre><span class="comment"># Initialize project</span>
+uv init mypaper && cd mypaper
+
+<span class="comment"># Add deps</span>
+uv add scanpy pandas numpy pydeseq2 jupyterlab
+
+<span class="comment"># Lock — produces uv.lock with exact wheels + hashes</span>
+uv lock
+
+<span class="comment"># Reproduce exactly (years later)</span>
+uv sync --frozen      <span class="comment"># installs from uv.lock, fails if drift</span>
+
+<span class="comment"># Run reproducibly</span>
+uv run python analysis.py
+</pre></div>
+<div class="code-tab-content"><span class="filename">renv (R)</span><pre><span class="comment"># In R project</span>
+install.packages(<span class="str">"renv"</span>)
+renv::init()         <span class="comment"># detects packages from .R / .qmd files</span>
+
+<span class="comment"># Lock current state</span>
+renv::snapshot()      <span class="comment"># writes renv.lock with versions + sources (CRAN/Bioc/GitHub)</span>
+
+<span class="comment"># Years later, on a fresh machine</span>
+renv::restore()       <span class="comment"># installs exact versions from renv.lock</span>
+
+<span class="comment"># Also write down the R version + OS for total clarity</span>
+sessionInfo()
+</pre></div>
+<div class="code-tab-content"><span class="filename">conda-lock — multi-platform, R+Python+CLI</span><pre><span class="comment"># environment.yml — high-level (CROSS-platform spec)</span>
+<span class="kw">name:</span> mypaper
+<span class="kw">channels:</span>
+  - conda-forge
+  - bioconda
+<span class="kw">dependencies:</span>
+  - python=3.12
+  - r-base=4.4
+  - scanpy
+  - bioconductor-deseq2
+  - bwa
+  - samtools
+
+<span class="comment"># Generate platform-specific lockfiles</span>
+conda-lock lock -f environment.yml -p linux-64 -p osx-arm64
+
+<span class="comment"># Install on each platform</span>
+conda-lock install --name mypaper conda-lock.yml
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: FAIR + Deposit ===== -->
+<section class="section">
+<div class="section-label" data-zh="FAIR" data-en="FAIR">FAIR</div>
+<h2 data-zh="FAIR 資料原則與存放" data-en="FAIR data principles & deposit">FAIR 資料原則與存放</h2>
+<div data-lang="zh">
+<p><strong>FAIR</strong> = <strong>F</strong>indable <strong>A</strong>ccessible <strong>I</strong>nteroperable <strong>R</strong>eusable。多數期刊 (Nature、Cell、PLoS、AAAS) 與資助機構 (NIH、ERC) 已強制要求論文程式碼與資料符合 FAIR。</p>
+</div>
+<div data-lang="en">
+<p><strong>FAIR</strong> = <strong>F</strong>indable <strong>A</strong>ccessible <strong>I</strong>nteroperable <strong>R</strong>eusable. Most journals (Nature, Cell, PLoS, AAAS) and funders (NIH, ERC) now require paper code/data to be FAIR-compliant.</p>
+</div>
+
+<div class="card-grid cols-2">
+<div class="card"><h4>📍 <span data-zh="Findable" data-en="Findable">Findable</span></h4>
+<div data-lang="zh"><p>有唯一識別碼 (DOI、accession)，並登錄在搜尋引擎可找到的地方。<strong>實作：</strong>Zenodo 取得 DOI、GitHub repo 連結 ORCID、GEO/SRA/ENA/PRIDE 取得 accession。</p></div>
+<div data-lang="en"><p>Has a unique identifier (DOI, accession) registered in searchable indices. <strong>How:</strong> mint a Zenodo DOI, link the GitHub repo to ORCID, deposit to GEO/SRA/ENA/PRIDE for accessions.</p></div>
+</div>
+<div class="card"><h4>🔓 <span data-zh="Accessible" data-en="Accessible">Accessible</span></h4>
+<div data-lang="zh"><p>可由標準協定取得 (HTTPS、open API)，即使資料受管制也要說明取得程序 (dbGaP、EGA)。<strong>實作：</strong>避免「contact author for data」——這幾乎等於不可再現。</p></div>
+<div data-lang="en"><p>Retrievable via standard protocols (HTTPS, open APIs). Even if data is controlled (dbGaP, EGA), the access process must be documented. <strong>How:</strong> avoid "contact author for data" — that's effectively not reproducible.</p></div>
+</div>
+<div class="card"><h4>🔗 <span data-zh="Interoperable" data-en="Interoperable">Interoperable</span></h4>
+<div data-lang="zh"><p>使用社群標準格式 (FASTQ、BAM、VCF、AnnData、OME-Zarr、SBML)，搭配 ontology (Cell Ontology、Disease Ontology、HPO)。<strong>實作：</strong>metadata 用 OBO Foundry ontologies 標註。</p></div>
+<div data-lang="en"><p>Uses community standard formats (FASTQ, BAM, VCF, AnnData, OME-Zarr, SBML) and ontologies (Cell Ontology, Disease Ontology, HPO). <strong>How:</strong> annotate metadata with OBO Foundry ontologies.</p></div>
+</div>
+<div class="card"><h4>♻️ <span data-zh="Reusable" data-en="Reusable">Reusable</span></h4>
+<div data-lang="zh"><p>充足 metadata 與授權聲明 (CC-BY for data、MIT/Apache for code)，符合社群 metadata 標準 (MIAME、MINSEQE)。<strong>實作：</strong>每個 dataset 附 README 與 LICENSE。</p></div>
+<div data-lang="en"><p>Rich metadata + license (CC-BY for data, MIT/Apache for code), conforms to community metadata standards (MIAME, MINSEQE). <strong>How:</strong> attach a README + LICENSE per dataset.</p></div>
+</div>
+</div>
+
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>實務 checklist：</strong>論文發表前——(1) GitHub repo → Zenodo DOI；(2) raw data → GEO/SRA；(3) AnnData → CellxGene 或 Figshare；(4) container → DockerHub/GHCR 並寫進 README；(5) snakemake/nextflow workflow → snakemake-workflows / nf-core。</span>
+<span data-lang="en"><strong>Practical checklist:</strong> Before submission — (1) GitHub repo → Zenodo DOI; (2) raw data → GEO/SRA; (3) AnnData → CellxGene or Figshare; (4) container → DockerHub/GHCR, document in README; (5) snakemake/nextflow workflow → snakemake-workflows / nf-core.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 5: Interactive ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="再現性自評卡 (10 項)" data-en="Reproducibility scorecard (10 items)">再現性自評卡 (10 項)</h2>
+<div class="interactive-panel">
+<p data-lang="zh" style="font-size:.92rem">點擊每一項打勾，看你的專案達到 Bronze / Silver / Gold / Platinum 哪一級。</p>
+<p data-lang="en" style="font-size:.92rem">Toggle each item to see your tier — Bronze / Silver / Gold / Platinum.</p>
+
+<div id="repoChecklist" style="display:grid;grid-template-columns:1fr;gap:8px;margin:14px 0">
+<!-- 10 items -->
+</div>
+
+<div style="display:flex;align-items:center;gap:14px;margin-top:18px;flex-wrap:wrap">
+<div style="font-family:var(--font-mono);font-size:1.2rem"><span id="repoScore">0</span> / 10</div>
+<div id="repoTier" style="padding:8px 18px;border-radius:20px;font-weight:700;background:var(--c-bg-alt);color:var(--c-ink)">—</div>
+</div>
+<p id="repoAdvice" style="font-size:.86rem;color:var(--c-ink-light);margin-top:8px">—</p>
+</div>
+</section>
+
+<!-- ===== Section 6: Ten Rules + Decision ===== -->
+<section class="section">
+<div class="section-label" data-zh="十大守則" data-en="TEN RULES">十大守則</div>
+<h2 data-zh="Ten Simple Rules for Reproducible Computational Research" data-en="Ten Simple Rules for Reproducible Computational Research">Ten Simple Rules for Reproducible Computational Research</h2>
+<div data-lang="zh"><p>Sandve, Nekrutenko, Taylor, Hovig 在 PLoS Comp Bio 2013 提出的十條守則，至今仍是學界 reproducibility 入門金句 (DOI: 10.1371/journal.pcbi.1003285)：</p></div>
+<div data-lang="en"><p>Ten rules by Sandve, Nekrutenko, Taylor, Hovig in PLoS Comp Bio 2013 — still the canonical reproducibility primer (DOI: 10.1371/journal.pcbi.1003285):</p></div>
+
+<div class="decision-tree">
+<h4 data-zh="十大守則" data-en="The Ten Rules">十大守則</h4>
+<div class="dt-node"><span class="dt-q">R1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>For every result, keep track of how it was produced.</strong> 記錄每個結果的產生過程。</span><span data-lang="en"><strong>For every result, keep track of how it was produced.</strong></span></div>
+<div class="dt-node"><span class="dt-q">R2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>Avoid manual data manipulation steps.</strong> 別手動編輯資料——所有變動都該是腳本。</span><span data-lang="en"><strong>Avoid manual data manipulation steps.</strong></span></div>
+<div class="dt-node"><span class="dt-q">R3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>Archive the exact versions of all external programs used.</strong></span><span data-lang="en"><strong>Archive exact versions of all external programs.</strong></span></div>
+<div class="dt-node"><span class="dt-q">R4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>Version-control all custom scripts.</strong></span><span data-lang="en"><strong>Version-control all custom scripts.</strong></span></div>
+<div class="dt-node"><span class="dt-q">R5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>Record all intermediate results, when possible in standardized formats.</strong></span><span data-lang="en"><strong>Record intermediate results in standard formats.</strong></span></div>
+<div class="dt-node"><span class="dt-q">R6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>For analyses that include randomness, note underlying random seeds.</strong></span><span data-lang="en"><strong>Note all random seeds.</strong></span></div>
+<div class="dt-node"><span class="dt-q">R7</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>Always store raw data behind plots.</strong></span><span data-lang="en"><strong>Always store the raw data behind plots.</strong></span></div>
+<div class="dt-node"><span class="dt-q">R8</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>Generate hierarchical analysis output, allowing inspection layers.</strong></span><span data-lang="en"><strong>Generate hierarchical outputs for layered inspection.</strong></span></div>
+<div class="dt-node"><span class="dt-q">R9</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>Connect textual statements to underlying results.</strong> 論文每句陳述都應對得回原始輸出。</span><span data-lang="en"><strong>Connect textual statements to underlying results.</strong></span></div>
+<div class="dt-node"><span class="dt-q">R10</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>Provide public access to scripts, runs, and results.</strong></span><span data-lang="en"><strong>Provide public access to scripts, runs, and results.</strong></span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> 下列何者最不符合 FAIR data 原則？</p>
+<p data-lang="en"><strong>Q1.</strong> Which is least FAIR-compliant?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 把 RNA-seq 上傳到 GEO 並取得 GSE accession</span><span data-lang="en">A. Uploading RNA-seq to GEO with a GSE accession</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. GitHub repo 連結 Zenodo DOI 並寫 LICENSE</span><span data-lang="en">B. GitHub repo with a Zenodo DOI and LICENSE</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 在論文 supplementary 寫「Code available from the corresponding author upon reasonable request」</span><span data-lang="en">C. Supplementary note "Code available from the corresponding author upon reasonable request"</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 用 OBO 標準 ontology 標註 cell type</span><span data-lang="en">D. Annotating cell types with OBO ontologies</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>「contact the author」幾乎等於 not Accessible——研究發現絕大多數此類聲明在 5 年後無人回覆。應該存到 Zenodo / GitHub 等永久 archive。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> "Contact the author" is effectively not Accessible — studies show most such statements get no reply after 5 years. Use permanent archives like Zenodo/GitHub.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 為什麼 <code>pip freeze &gt; requirements.txt</code> 不足以再現環境？</p>
+<p data-lang="en"><strong>Q2.</strong> Why is <code>pip freeze &gt; requirements.txt</code> insufficient?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 它太冗長</span><span data-lang="en">A. It's too verbose</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 它沒有檔案 hash、沒有跨平台支援、不記錄 OS-level 二進位 (如 samtools)</span><span data-lang="en">B. No hashes, no cross-platform spec, doesn't capture OS-level binaries (e.g. samtools)</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 它只支援 Python 3.6 以下</span><span data-lang="en">C. It only works for Python ≤3.6</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 沒有問題</span><span data-lang="en">D. There's no problem</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>完整再現需要 hash (避免被替換)、跨平台 wheel、OS 工具版本。用 uv.lock / conda-lock 或 Dockerfile + image digest。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> True reproducibility needs hashes (prevent swap), cross-platform wheels, and OS-tool versions. Use uv.lock / conda-lock or Dockerfile with image digest.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> 你想要一份 .qmd 檔同時包含 R 與 Python 的程式碼區塊，並 render 成 HTML + PDF——應該用？</p>
+<p data-lang="en"><strong>Q3.</strong> You want one .qmd file with R and Python code blocks, rendered to HTML + PDF — use what?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. Quarto</span><span data-lang="en">A. Quarto</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. RMarkdown (它不支援 Python)</span><span data-lang="en">B. RMarkdown (no Python support)</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. Jupyter notebook</span><span data-lang="en">C. Jupyter notebook</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. LaTeX</span><span data-lang="en">D. LaTeX</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>Quarto 是 RMarkdown 的後繼者，原生支援 R / Python / Julia / Observable JS 在同一文件，並可同時 render 為 HTML / PDF / docx / 投影片。RMarkdown 透過 reticulate 也可支援 Python，但 Quarto 更為現代且通用。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> Quarto succeeds RMarkdown with native support for R/Python/Julia/Observable JS in one document, rendering to HTML/PDF/docx/slides. RMarkdown can use reticulate but Quarto is more modern and language-agnostic.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="hpc-cloud-bio.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="E3 · HPC 與雲端" data-en="E3 · HPC & Cloud">E3 · HPC 與雲端</span></a>
+<a href="index.html"><span class="nav-dir" data-zh="回到目錄 →" data-en="Back to Hub →">回到目錄 →</span><span class="nav-title" data-zh="教程首頁" data-en="Tutorial Hub">教程首頁</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · E4 Reproducible Science</footer>
+
+<script src="i18n.js"></script>
+<script>
+const checklistItems = [
+  { zh: "所有程式碼放在 Git 版控（不只是「我的桌面」）", en: "All code in Git (not just 'my desktop')" },
+  { zh: "Repo 已透過 Zenodo / Figshare 取得 DOI", en: "Repo has a DOI via Zenodo / Figshare" },
+  { zh: "提供 environment lockfile (uv.lock / renv.lock / conda-lock)", en: "Provides environment lockfile (uv.lock / renv.lock / conda-lock)" },
+  { zh: "提供 Dockerfile 或 Apptainer 容器（含 image digest）", en: "Ships a Dockerfile or Apptainer container (with image digest)" },
+  { zh: "Raw data 已存入公開 archive (GEO / SRA / Zenodo)", en: "Raw data deposited in public archive (GEO / SRA / Zenodo)" },
+  { zh: "所有 random 操作有設定 seed 並記錄", en: "All random ops use a recorded seed" },
+  { zh: "Pipeline 用 Snakemake / Nextflow 而非單一 shell 腳本", en: "Pipeline uses Snakemake / Nextflow (not a single shell script)" },
+  { zh: "論文圖表的原始 data 可被找到並對得回 code", en: "Figure source data is findable and links back to code" },
+  { zh: "Repo 在乾淨機器上能由 CI 自動測試通過", en: "Repo passes automated CI tests on a clean machine" },
+  { zh: "Repo 有 LICENSE、README、CITATION.cff", en: "Repo has LICENSE, README, CITATION.cff" }
+];
+const repoListEl = document.getElementById('repoChecklist');
+checklistItems.forEach((it, i)=>{
+  const div = document.createElement('label');
+  div.className = 'card';
+  div.style.cssText = 'padding:10px 14px;margin-bottom:0;cursor:pointer;display:flex;gap:10px;align-items:flex-start';
+  div.innerHTML = `<input type="checkbox" data-i="${i}" style="margin-top:5px"> <span data-zh="${it.zh}" data-en="${it.en}">${it.zh}</span>`;
+  repoListEl.appendChild(div);
+});
+function updateRepoScore(){
+  const checks = repoListEl.querySelectorAll('input[type=checkbox]');
+  let n = 0;
+  checks.forEach(c => { if(c.checked) n++; });
+  document.getElementById('repoScore').textContent = n;
+  let tier_zh='', tier_en='', color='', adv_zh='', adv_en='';
+  if(n<3){ tier_zh='⚠️ Below Bronze'; tier_en='⚠️ Below Bronze'; color='var(--c-danger-light)'; adv_zh='起點：先把 code 放上 GitHub，再加上 README + LICENSE。'; adv_en='Start: push code to GitHub, add README + LICENSE.'; }
+  else if(n<5){ tier_zh='🥉 Bronze'; tier_en='🥉 Bronze'; color='#fde68a'; adv_zh='下一步：加上 environment lockfile 與 Zenodo DOI。'; adv_en='Next: add environment lockfile + Zenodo DOI.'; }
+  else if(n<8){ tier_zh='🥈 Silver'; tier_en='🥈 Silver'; color='#e5e7eb'; adv_zh='很好！再補上 Docker container 與 random seeds 即可達金。'; adv_en='Nice! Add a Docker container and document random seeds to reach Gold.'; }
+  else if(n<10){ tier_zh='🥇 Gold'; tier_en='🥇 Gold'; color='#fef3c7'; adv_zh='優秀。最後一哩：CI 自動測試。'; adv_en='Excellent. Last mile: automated CI tests.'; }
+  else { tier_zh='💎 Platinum'; tier_en='💎 Platinum'; color='var(--c-success-light)'; adv_zh='完美。你的論文 5 年後仍能被重現。'; adv_en='Flawless. Your paper will still be reproducible in 5 years.'; }
+  const tierEl = document.getElementById('repoTier');
+  tierEl.style.background = color;
+  tierEl.dataset.zh = tier_zh; tierEl.dataset.en = tier_en;
+  const advEl = document.getElementById('repoAdvice');
+  advEl.dataset.zh = adv_zh; advEl.dataset.en = adv_en;
+  const cur = (window.I18n && window.I18n.get && window.I18n.get()) || 'zh';
+  tierEl.textContent = cur==='zh' ? tier_zh : tier_en;
+  advEl.textContent  = cur==='zh' ? adv_zh  : adv_en;
+}
+repoListEl.addEventListener('change', updateRepoScore);
+document.addEventListener('langchange', updateRepoScore);
+updateRepoScore();
+</script>
+</body></html>

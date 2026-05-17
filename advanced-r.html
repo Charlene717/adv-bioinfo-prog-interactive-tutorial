@@ -1,0 +1,630 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>A2: 進階 R 與 tidy eval · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html" class="active">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK A · TOPIC 2 / 20</div>
+<h1 data-zh="進階 R 與 tidy eval：從 dplyr 使用者到 Bioconductor 開發者" data-en="Advanced R & tidy eval: From dplyr user to Bioconductor developer">進階 R 與 tidy eval：從 dplyr 使用者到 Bioconductor 開發者</h1>
+<p class="subtitle" data-lang="zh">S3 / S4 / R6 三種物件系統、environments、NSE 與 tidy eval (<code>{{ }}</code>, <code>!!</code>, <code>:=</code>)、Bioconductor 風格的 Methods/Generics——把 R 從「分析工具」變成「函式庫語言」。</p>
+<p class="subtitle" data-lang="en">Three object systems (S3/S4/R6), environments, NSE and tidy eval (<code>{{ }}</code>, <code>!!</code>, <code>:=</code>), Bioconductor-style Methods/Generics — turn R from "analysis tool" into "library language."</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼進階 R 對生醫資訊重要？" data-en="Why advanced R matters in bioinformatics">為什麼進階 R 對生醫資訊重要？</h2>
+<div data-lang="zh">
+<p>大部分 R 使用者熟悉 <code>dplyr</code> 三件套 (<code>filter / mutate / summarise</code>) 與 <code>ggplot2</code>，但生醫資訊套件 (DESeq2、limma、Seurat、SingleCellExperiment) 走的是另一條路：</p>
+<ul>
+<li><strong>物件系統不同：</strong>Bioconductor 採 S4，Seurat 用 S4 + Reference class，<code>R6</code> 在 Shiny / plumber 流行。讀別人的 source code 必須認得三種系統。</li>
+<li><strong>非標準求值 (NSE)：</strong>當你寫 <code>dplyr::filter(df, gene == "BRCA1")</code>，<code>gene</code> 不是字串而是「未求值的符號」——這就是 NSE，也是 tidyverse 簡潔語法的代價。包裝 dplyr 函式時你會踩到。</li>
+<li><strong>環境與 lexical scope：</strong>R 的 closure、<code>parent.frame()</code>、<code>environment()</code> 是 Shiny reactive、testthat fixture、ggplot2 圖層機制的基礎。</li>
+</ul>
+<p>本頁六個主題：<strong>S3 / S4 / R6 物件系統</strong>、<strong>environments</strong>、<strong>NSE 基礎</strong>、<strong>tidy eval</strong>、<strong>Bioconductor 慣例</strong>、<strong>新管線 <code>|&gt;</code></strong>。</p>
+</div>
+<div data-lang="en">
+<p>Most R users know <code>dplyr</code>'s triumvirate (<code>filter / mutate / summarise</code>) and <code>ggplot2</code>, but Bioconductor packages (DESeq2, limma, Seurat, SingleCellExperiment) take a different road:</p>
+<ul>
+<li><strong>Different object systems:</strong> Bioconductor uses S4; Seurat mixes S4 + Reference class; <code>R6</code> is popular in Shiny / plumber. Reading others' source code requires recognizing all three.</li>
+<li><strong>Non-standard evaluation (NSE):</strong> when you write <code>dplyr::filter(df, gene == "BRCA1")</code>, <code>gene</code> is not a string but an "unevaluated symbol" — that's NSE, the cost of tidyverse brevity. You'll hit it when wrapping dplyr functions.</li>
+<li><strong>Environments & lexical scope:</strong> R's closures, <code>parent.frame()</code>, <code>environment()</code> underpin Shiny reactives, testthat fixtures, and ggplot2 layer mechanics.</li>
+</ul>
+<p>Six topics: <strong>S3/S4/R6</strong>, <strong>environments</strong>, <strong>NSE basics</strong>, <strong>tidy eval</strong>, <strong>Bioconductor conventions</strong>, <strong>the new pipe <code>|&gt;</code></strong>.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>學習策略：</strong>如果你寫過 Python 的 dunder methods (<code>__init__</code>, <code>__repr__</code>)，可以把 S4 method dispatch 想成「多重繼承 + 多重 dispatch 版本的 dunder」。R6 就比較像 Python 的 class。</span>
+<span data-lang="en"><strong>Learning strategy:</strong> If you've written Python dunders (<code>__init__</code>, <code>__repr__</code>), treat S4 method dispatch as "multiple-inheritance + multi-dispatch dunders." R6 is closer to a Python class.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: S3 / S4 / R6 ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、S3 vs S4 vs R6：三種物件系統" data-en="I. S3 vs S4 vs R6: three object systems">一、S3 vs S4 vs R6：三種物件系統</h2>
+<div data-lang="zh"><p>R 有四種以上的物件系統 (S3, S4, RC/Reference class, R6, R7 草案中)。實務上你只需要熟悉前三，且 90% 場景用得到的是 S3 與 S4。</p></div>
+<div data-lang="en"><p>R has 4+ object systems (S3, S4, RC, R6, R7 in draft). In practice only the first three matter, and 90% of code uses S3 or S4.</p></div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="系統" data-en="System">系統</th>
+<th data-zh="正式程度" data-en="Formality">正式程度</th>
+<th data-zh="可變性" data-en="Mutability">可變性</th>
+<th data-zh="Dispatch" data-en="Dispatch">Dispatch</th>
+<th data-zh="代表套件" data-en="Used in">代表套件</th>
+</tr></thead><tbody>
+<tr><td><strong>S3</strong></td><td data-zh="非正式 (僅 class 屬性)" data-en="Informal (class attr)">非正式</td><td data-zh="copy-on-modify" data-en="copy-on-modify">copy-on-modify</td><td data-zh="單一參數" data-en="Single arg">單一參數</td><td><code>lm()</code>、<code>glm()</code>、base R</td></tr>
+<tr><td><strong>S4</strong></td><td data-zh="正式 (有 slot 型別)" data-en="Formal (typed slots)">正式</td><td data-zh="copy-on-modify" data-en="copy-on-modify">copy-on-modify</td><td data-zh="多重 dispatch" data-en="Multi-dispatch">多重 dispatch</td><td>Bioconductor (<code>DESeqDataSet</code>, <code>SummarizedExperiment</code>)</td></tr>
+<tr><td><strong>R6</strong></td><td data-zh="OO 風格 (encapsulation)" data-en="OO-style (encapsulated)">OO 風格</td><td data-zh="可變 (reference semantics)" data-en="Mutable (reference)">可變</td><td data-zh="method on object" data-en="Method on object">物件方法</td><td>Shiny modules, plumber, <code>processx</code></td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">s3.R</button>
+<button class="code-tab-btn">s4.R</button>
+<button class="code-tab-btn">r6.R</button>
+<button class="code-tab-btn">python_equiv.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">s3.R — informal: just set the class attribute</span><pre><span class="comment"># Create an S3 "object" by attaching a class label to a list</span>
+new_qc_result &lt;- <span class="kw">function</span>(n_cells, n_kept, params) {
+  obj &lt;- <span class="func">list</span>(n_cells = n_cells, n_kept = n_kept, params = params)
+  <span class="func">class</span>(obj) &lt;- <span class="str">"qc_result"</span>
+  obj
+}
+
+<span class="comment"># Define a method by naming convention: &lt;generic&gt;.&lt;class&gt;</span>
+print.qc_result &lt;- <span class="kw">function</span>(x, ...) {
+  cat(<span class="func">sprintf</span>(<span class="str">"QC result: %d / %d cells kept (%.1f%%)\n"</span>,
+              x$n_kept, x$n_cells, <span class="num">100</span> * x$n_kept / x$n_cells))
+}
+
+res &lt;- new_qc_result(<span class="num">5000</span>, <span class="num">4321</span>, <span class="func">list</span>(min_features = <span class="num">200</span>))
+<span class="func">print</span>(res)   <span class="comment"># dispatches to print.qc_result</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">s4.R — formal: typed slots (Bioconductor style)</span><pre><span class="comment"># Define a class with typed slots</span>
+<span class="func">setClass</span>(
+  <span class="str">"QCResult"</span>,
+  representation = <span class="func">representation</span>(
+    counts   = <span class="str">"matrix"</span>,
+    cell_meta = <span class="str">"data.frame"</span>,
+    params   = <span class="str">"list"</span>
+  ),
+  prototype = <span class="func">list</span>(params = <span class="func">list</span>())
+)
+
+<span class="comment"># Define a *generic* and a *method* (multi-dispatch ready)</span>
+<span class="func">setGeneric</span>(<span class="str">"filterCells"</span>, <span class="kw">function</span>(x, min_features) standardGeneric(<span class="str">"filterCells"</span>))
+
+<span class="func">setMethod</span>(<span class="str">"filterCells"</span>, signature(x = <span class="str">"QCResult"</span>, min_features = <span class="str">"numeric"</span>),
+  <span class="kw">function</span>(x, min_features) {
+    keep &lt;- x@cell_meta$nFeature &gt;= min_features
+    x@counts &lt;- x@counts[, keep]
+    x@cell_meta &lt;- x@cell_meta[keep, ]
+    x
+  })
+
+qc &lt;- <span class="func">new</span>(<span class="str">"QCResult"</span>,
+           counts = <span class="func">matrix</span>(<span class="num">0</span>, nrow = <span class="num">100</span>, ncol = <span class="num">50</span>),
+           cell_meta = data.frame(nFeature = <span class="func">sample</span>(<span class="num">100</span>:<span class="num">5000</span>, <span class="num">50</span>)))
+qc2 &lt;- filterCells(qc, min_features = <span class="num">500</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">r6.R — encapsulated, mutable (Shiny / plumber)</span><pre><span class="kw">library</span>(R6)
+
+PipelineRun &lt;- R6Class(<span class="str">"PipelineRun"</span>,
+  public = <span class="func">list</span>(
+    sample_id = <span class="kw">NULL</span>,
+    n_reads   = <span class="num">0</span>,
+    initialize = <span class="kw">function</span>(sample_id) {
+      self$sample_id &lt;- sample_id
+    },
+    add_reads = <span class="kw">function</span>(n) {
+      self$n_reads &lt;- self$n_reads + n   <span class="comment"># mutates in place!</span>
+      invisible(self)                    <span class="comment"># enable chaining</span>
+    },
+    summary = <span class="kw">function</span>() {
+      <span class="func">sprintf</span>(<span class="str">"%s: %d reads"</span>, self$sample_id, self$n_reads)
+    }
+  ),
+  private = <span class="func">list</span>(
+    .hash = <span class="kw">NULL</span>
+  )
+)
+
+run &lt;- PipelineRun$new(<span class="str">"SRR123"</span>)
+run$add_reads(<span class="num">1e6</span>)$add_reads(<span class="num">5e5</span>)   <span class="comment"># method chaining</span>
+run$summary()
+</pre></div>
+<div class="code-tab-content"><span class="filename">python_equiv.py — closest Python idiom for each</span><pre><span class="comment"># S3 ≈ duck typing + isinstance dispatch (informal)</span>
+<span class="kw">class</span> <span class="cls">QCResult</span>:
+    <span class="kw">def</span> <span class="func">__init__</span>(self, n_cells, n_kept): self.n_cells, self.n_kept = n_cells, n_kept
+    <span class="kw">def</span> <span class="func">__repr__</span>(self): <span class="kw">return</span> <span class="str">f"QC: {self.n_kept}/{self.n_cells}"</span>
+
+<span class="comment"># S4 ≈ multipledispatch / functools.singledispatch (multi-dispatch)</span>
+<span class="kw">from</span> functools <span class="kw">import</span> singledispatch
+<span class="kw">@</span><span class="func">singledispatch</span>
+<span class="kw">def</span> <span class="func">filter_cells</span>(x, min_features): <span class="kw">raise</span> <span class="cls">NotImplementedError</span>
+<span class="kw">@</span><span class="func">filter_cells.register</span>
+<span class="kw">def</span> _(x: QCResult, min_features: int): ...
+
+<span class="comment"># R6 ≈ regular Python class (mutable, reference semantics)</span>
+<span class="kw">class</span> <span class="cls">PipelineRun</span>:
+    <span class="kw">def</span> <span class="func">__init__</span>(self, sid): self.sample_id = sid; self.n_reads = <span class="num">0</span>
+    <span class="kw">def</span> <span class="func">add_reads</span>(self, n): self.n_reads += n; <span class="kw">return</span> self
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>常見陷阱：</strong>S3/S4 是 <em>copy-on-modify</em>——<code>x@slot &lt;- val</code> 不會修改傳入的 <code>x</code>，而是回傳新物件，你必須 <code>x &lt;- f(x)</code>。R6 是 <em>reference</em>，傳入函式內修改會影響外部變數。混用兩種語意是 bug 的溫床。</span>
+<span data-lang="en"><strong>Common pitfall:</strong> S3/S4 are <em>copy-on-modify</em> — <code>x@slot &lt;- val</code> does NOT mutate the passed <code>x</code>; it returns a new object, so you must write <code>x &lt;- f(x)</code>. R6 is <em>reference</em>; mutating inside a function affects the outer variable. Mixing these semantics is a bug magnet.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: Interactive Panel — comparison ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動比較" data-en="INTERACTIVE">互動比較</div>
+<h2 data-zh="二、S3 vs S4 vs R6 取捨" data-en="II. S3 vs S4 vs R6 trade-offs">二、S3 vs S4 vs R6 取捨</h2>
+
+<div class="interactive-panel">
+<h3 data-zh="點按下方按鈕，比較三種系統的權衡" data-en="Click below to compare trade-offs">點按下方按鈕，比較三種系統的權衡</h3>
+<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0">
+  <button class="code-tab-btn sys-btn active" data-sys="s3">S3</button>
+  <button class="code-tab-btn sys-btn" data-sys="s4">S4</button>
+  <button class="code-tab-btn sys-btn" data-sys="r6">R6</button>
+</div>
+<div id="sysCompare" class="sim-stats" style="flex-direction:column;align-items:flex-start;gap:.4rem">
+  <span class="sim-stat info" id="sysPros">— pros</span>
+  <span class="sim-stat info" id="sysCons">— cons</span>
+  <span class="sim-stat info" id="sysWhen">— when to use</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 4: Environments & scope ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="三、Environments 與 lexical scope" data-en="III. Environments & lexical scope">三、Environments 與 lexical scope</h2>
+<div data-lang="zh">
+<p>R 的每個函式都帶著定義它的 environment (closure)。這個機制支撐 ggplot2 圖層、Shiny reactive、testthat fixture 與大部分 metaprogramming。理解 <code>environment()</code>、<code>parent.frame()</code>、<code>globalenv()</code> 三者的差別是進階 R 的分水嶺。</p>
+</div>
+<div data-lang="en">
+<p>Every R function carries the environment in which it was defined (a closure). This underpins ggplot2 layers, Shiny reactives, testthat fixtures, and most metaprogramming. Knowing <code>environment()</code>, <code>parent.frame()</code>, and <code>globalenv()</code> is the watershed for advanced R.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">closure.R</button>
+<button class="code-tab-btn">parent_frame.R</button>
+<button class="code-tab-btn">env_as_hash.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">closure.R — function carries its defining env</span><pre><span class="comment"># Factory: returns a configured function that "remembers" its threshold</span>
+make_qc_filter &lt;- <span class="kw">function</span>(min_features) {
+  <span class="kw">function</span>(cell_meta) {
+    cell_meta[cell_meta$nFeature &gt;= min_features, ]
+  }
+}
+
+filt_strict &lt;- make_qc_filter(<span class="num">500</span>)
+filt_loose  &lt;- make_qc_filter(<span class="num">200</span>)
+
+<span class="comment"># Each closure carries its own bindings — peek inside:</span>
+<span class="func">environment</span>(filt_strict)$min_features   <span class="comment"># 500</span>
+<span class="func">environment</span>(filt_loose)$min_features    <span class="comment"># 200</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">parent_frame.R — for NSE & deparse(substitute(x))</span><pre><span class="comment"># parent.frame() = the env where the function was CALLED (dynamic)</span>
+<span class="comment"># environment() = the env where the function was DEFINED (lexical)</span>
+
+inspect &lt;- <span class="kw">function</span>(x) {
+  <span class="comment"># Capture the NAME the caller used:</span>
+  caller_name &lt;- <span class="func">deparse</span>(<span class="func">substitute</span>(x))
+  cat(<span class="str">"You passed variable named:"</span>, caller_name, <span class="str">"\n"</span>)
+  cat(<span class="str">"Its value is:"</span>, x, <span class="str">"\n"</span>)
+}
+
+my_var &lt;- <span class="num">42</span>
+inspect(my_var)
+<span class="comment"># &gt; You passed variable named: my_var</span>
+<span class="comment"># &gt; Its value is: 42</span>
+
+<span class="comment"># This is how plot() gets "main = my_var" axis labels for free.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">env_as_hash.R — environments as O(1) hash maps</span><pre><span class="comment"># Unlike named lists (O(n) lookup), environments are hash maps (O(1))</span>
+gene_db &lt;- <span class="func">new.env</span>(hash = <span class="kw">TRUE</span>, parent = emptyenv())
+
+<span class="func">assign</span>(<span class="str">"BRCA1"</span>, <span class="func">list</span>(chr = <span class="str">"chr17"</span>, len = <span class="num">81189</span>), envir = gene_db)
+<span class="func">assign</span>(<span class="str">"TP53"</span>,  <span class="func">list</span>(chr = <span class="str">"chr17"</span>, len = <span class="num">19149</span>), envir = gene_db)
+
+<span class="func">get</span>(<span class="str">"BRCA1"</span>, envir = gene_db)
+<span class="func">exists</span>(<span class="str">"EGFR"</span>, envir = gene_db, inherits = <span class="kw">FALSE</span>)
+<span class="func">ls</span>(gene_db)
+
+<span class="comment"># Use case: caching expensive lookups inside a package's namespace</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: NSE basics ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="四、Non-Standard Evaluation — substitute / quote / eval" data-en="IV. Non-Standard Evaluation — substitute / quote / eval">四、Non-Standard Evaluation — substitute / quote / eval</h2>
+<div data-lang="zh">
+<p>大部分 R 函式採「標準求值」：呼叫 <code>f(x + 1)</code> 時，<code>x + 1</code> 先被求值。但 <code>dplyr::filter(df, x &gt; 10)</code> 不會立即把 <code>x &gt; 10</code> 求值——它要先看 <code>df</code> 裡有沒有 <code>x</code> 這個欄位。這就是 <strong>NSE</strong>，由三個函式撐起：<code>substitute()</code> 捕捉未求值表達式、<code>quote()</code> 建立未求值表達式、<code>eval()</code> 在指定 env 求值。</p>
+</div>
+<div data-lang="en">
+<p>Most R functions use "standard evaluation": <code>f(x + 1)</code> evaluates <code>x + 1</code> first. But <code>dplyr::filter(df, x &gt; 10)</code> does NOT eagerly evaluate <code>x &gt; 10</code> — it first checks whether <code>df</code> has a column named <code>x</code>. That's <strong>NSE</strong>, built on three functions: <code>substitute()</code> captures the unevaluated expr, <code>quote()</code> builds one, <code>eval()</code> evaluates in a chosen env.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">substitute.R</button>
+<button class="code-tab-btn">quote_eval.R</button>
+<button class="code-tab-btn">why_painful.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">substitute.R — capture caller's expression</span><pre>my_summary &lt;- <span class="kw">function</span>(data, col) {
+  col_expr &lt;- <span class="func">substitute</span>(col)        <span class="comment"># capture: e.g. `gene_count`</span>
+  col_name &lt;- <span class="func">deparse</span>(col_expr)        <span class="comment"># to string: "gene_count"</span>
+  values   &lt;- <span class="func">eval</span>(col_expr, envir = data)
+  cat(<span class="str">"Summary of"</span>, col_name, <span class="str">":\n"</span>)
+  <span class="func">print</span>(<span class="func">summary</span>(values))
+}
+
+df &lt;- data.frame(gene_count = <span class="func">rpois</span>(<span class="num">100</span>, <span class="num">50</span>), mt_pct = <span class="func">runif</span>(<span class="num">100</span>, <span class="num">0</span>, <span class="num">20</span>))
+my_summary(df, gene_count)   <span class="comment"># pass column name unquoted</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">quote_eval.R — building expressions programmatically</span><pre><span class="comment"># quote() captures whatever expression you write, without evaluating it</span>
+expr &lt;- <span class="func">quote</span>(mean(x) + sd(x))
+expr                          <span class="comment"># mean(x) + sd(x)</span>
+<span class="func">class</span>(expr)                   <span class="comment"># "call"</span>
+
+<span class="comment"># Inject values into a pre-built call:</span>
+my_data &lt;- <span class="func">list</span>(x = <span class="func">rnorm</span>(<span class="num">100</span>))
+<span class="func">eval</span>(expr, envir = my_data)   <span class="comment"># works — evaluates against my_data</span>
+
+<span class="comment"># Build a call dynamically: glm(y ~ x1 + x2, ...) with chosen vars</span>
+make_formula &lt;- <span class="kw">function</span>(response, predictors) {
+  <span class="func">as.formula</span>(<span class="func">paste</span>(response, <span class="str">"~"</span>, <span class="func">paste</span>(predictors, collapse = <span class="str">" + "</span>)))
+}
+make_formula(<span class="str">"survival"</span>, <span class="func">c</span>(<span class="str">"age"</span>, <span class="str">"stage"</span>, <span class="str">"BRCA1_expr"</span>))
+</pre></div>
+<div class="code-tab-content"><span class="filename">why_painful.R — the classic dplyr wrapper bug</span><pre><span class="kw">library</span>(dplyr)
+
+<span class="comment"># NAIVE: try to write a thin wrapper around filter() — BROKEN</span>
+filter_high &lt;- <span class="kw">function</span>(df, col, threshold) {
+  df %&gt;% <span class="func">filter</span>(col &gt; threshold)   <span class="comment"># literally looks for column "col"!</span>
+}
+filter_high(iris, Sepal.Width, <span class="num">3.5</span>)
+<span class="comment"># Error: object 'col' not found  ← because filter quotes its 2nd arg</span>
+
+<span class="comment"># FIX: tidy eval (see next section). Use {{ col }} for embracing.</span>
+filter_high_v2 &lt;- <span class="kw">function</span>(df, col, threshold) {
+  df %&gt;% <span class="func">filter</span>({{ col }} &gt; threshold)   <span class="comment"># ✅ works</span>
+}
+filter_high_v2(iris, Sepal.Width, <span class="num">3.5</span>)
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: tidy eval ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="五、tidy eval：{{ }}、!!、:= 三劍客" data-en="V. tidy eval: {{ }}, !!, := — the trio">五、tidy eval：{{ }}、!!、:= 三劍客</h2>
+<div data-lang="zh">
+<p>tidy eval 是 <code>rlang</code> 套件對 NSE 的現代封裝。三個關鍵操作：<strong>embrace <code>{{ x }}</code></strong> 把參數從呼叫者「整段轉發」進 dplyr 動詞；<strong><code>!!</code> (bang-bang)</strong> 取出已捕捉的 quosure 注入；<strong><code>:=</code> (walrus)</strong> 在 LHS 動態命名新欄位。</p>
+</div>
+<div data-lang="en">
+<p>tidy eval is rlang's modern wrapper around NSE. Three key operators: <strong>embrace <code>{{ x }}</code></strong> forwards an argument straight into dplyr verbs; <strong><code>!!</code> (bang-bang)</strong> injects a captured quosure; <strong><code>:=</code> (walrus)</strong> lets you name a new column dynamically on the LHS.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">embrace.R</button>
+<button class="code-tab-btn">enquo_bang.R</button>
+<button class="code-tab-btn">walrus.R</button>
+<button class="code-tab-btn">multi_args.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">embrace.R — {{ x }} for thin wrappers</span><pre><span class="kw">library</span>(dplyr); <span class="kw">library</span>(rlang)
+
+<span class="comment"># Wrap dplyr in 1 line — works on ANY column the caller names</span>
+summarise_gene &lt;- <span class="kw">function</span>(data, gene_col, group_col) {
+  data %&gt;%
+    <span class="func">group_by</span>({{ group_col }}) %&gt;%
+    <span class="func">summarise</span>(
+      mean_expr = <span class="func">mean</span>({{ gene_col }}, na.rm = <span class="kw">TRUE</span>),
+      median_expr = <span class="func">median</span>({{ gene_col }}, na.rm = <span class="kw">TRUE</span>),
+      .groups = <span class="str">"drop"</span>
+    )
+}
+
+<span class="comment"># Caller uses bare column names, just like real dplyr</span>
+summarise_gene(scRNA_df, BRCA1, cell_type)
+</pre></div>
+<div class="code-tab-content"><span class="filename">enquo_bang.R — capture once, inject many times</span><pre><span class="comment"># For more complex flows, capture with enquo() and inject with !!</span>
+plot_qc &lt;- <span class="kw">function</span>(data, x, y, color) {
+  x_q     &lt;- <span class="func">enquo</span>(x)
+  y_q     &lt;- <span class="func">enquo</span>(y)
+  color_q &lt;- <span class="func">enquo</span>(color)
+
+  ggplot2::<span class="func">ggplot</span>(data, ggplot2::<span class="func">aes</span>(x = !!x_q, y = !!y_q, color = !!color_q)) +
+    ggplot2::<span class="func">geom_point</span>(alpha = <span class="num">0.5</span>) +
+    ggplot2::<span class="func">labs</span>(x = <span class="func">as_label</span>(x_q), y = <span class="func">as_label</span>(y_q))
+}
+
+plot_qc(cells_df, nFeature, percent_mt, batch)
+
+<span class="comment"># For lists of args, use enquos() (plural) + !!! (bang-bang-bang)</span>
+group_summary &lt;- <span class="kw">function</span>(data, ...) {
+  groups &lt;- <span class="func">enquos</span>(...)
+  data %&gt;% <span class="func">group_by</span>(!!!groups) %&gt;% <span class="func">summarise</span>(n = <span class="func">n</span>(), .groups = <span class="str">"drop"</span>)
+}
+group_summary(scRNA_df, sample, cell_type, condition)
+</pre></div>
+<div class="code-tab-content"><span class="filename">walrus.R — dynamic LHS column names</span><pre><span class="comment"># := allows the NEW column name to come from a variable</span>
+add_log &lt;- <span class="kw">function</span>(data, col) {
+  col_name &lt;- <span class="func">as_label</span>(<span class="func">enquo</span>(col))
+  new_name &lt;- <span class="func">paste0</span>(<span class="str">"log_"</span>, col_name)
+  data %&gt;% <span class="func">mutate</span>(!!new_name := <span class="func">log1p</span>({{ col }}))
+}
+
+add_log(counts_df, BRCA1)
+<span class="comment"># adds a column named "log_BRCA1"</span>
+
+add_log(counts_df, TP53)
+<span class="comment"># adds a column named "log_TP53"</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">multi_args.R — varargs across multiple genes</span><pre><span class="comment"># Build n new "log_*" columns from n input columns</span>
+add_log_multi &lt;- <span class="kw">function</span>(data, ...) {
+  cols &lt;- <span class="func">enquos</span>(...)
+  new_cols &lt;- <span class="func">map</span>(cols, ~ <span class="func">quo</span>(<span class="func">log1p</span>(!!.x)))
+  <span class="func">names</span>(new_cols) &lt;- <span class="func">paste0</span>(<span class="str">"log_"</span>, <span class="func">map_chr</span>(cols, as_label))
+  data %&gt;% <span class="func">mutate</span>(!!!new_cols)
+}
+
+counts_df %&gt;% add_log_multi(BRCA1, TP53, EGFR)
+<span class="comment"># adds 3 new columns: log_BRCA1, log_TP53, log_EGFR</span>
+</pre></div>
+</div>
+
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>記憶口訣：</strong>「想轉發 → <code>{{ }}</code>」、「想自己控制 → <code>enquo()</code> + <code>!!</code>」、「動態欄位名 → <code>:=</code>」、「一串參數 → <code>enquos()</code> + <code>!!!</code>」。</span>
+<span data-lang="en"><strong>Mnemonic:</strong> "Just forward → <code>{{ }}</code>"; "want control → <code>enquo()</code> + <code>!!</code>"; "dynamic column name → <code>:=</code>"; "list of args → <code>enquos()</code> + <code>!!!</code>".</span>
+</div></div>
+</section>
+
+<!-- ===== Section 7: Bioconductor conventions ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 5" data-en="TOPIC 5">主題 5</div>
+<h2 data-zh="六、Bioconductor 慣例：Generics、BiocGenerics" data-en="VI. Bioconductor conventions: Generics & BiocGenerics">六、Bioconductor 慣例：Generics、BiocGenerics</h2>
+<div data-lang="zh">
+<p>Bioconductor 對於資料容器有一套近乎標準的介面：所有「樣本 × 特徵」型物件都實作 <code>rownames()</code> / <code>colnames()</code> / <code>dim()</code> / <code>assay()</code> / <code>colData()</code>。新套件透過 <code>setMethod()</code> 對 <code>BiocGenerics</code> 已宣告的 generic 註冊方法，使用者就能跨套件用一致的語法處理 <code>SummarizedExperiment</code>、<code>SingleCellExperiment</code>、<code>DESeqDataSet</code>。</p>
+</div>
+<div data-lang="en">
+<p>Bioconductor enforces a near-standard interface for "sample × feature" containers: every such object implements <code>rownames()</code> / <code>colnames()</code> / <code>dim()</code> / <code>assay()</code> / <code>colData()</code>. New packages register methods on already-declared generics in <code>BiocGenerics</code>, so users get a uniform syntax across <code>SummarizedExperiment</code>, <code>SingleCellExperiment</code>, <code>DESeqDataSet</code>.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">se_methods.R</button>
+<button class="code-tab-btn">validity.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">se_methods.R — extending a Bioconductor class</span><pre><span class="kw">library</span>(SummarizedExperiment)
+<span class="kw">library</span>(S4Vectors)
+
+<span class="comment"># Define a subclass that adds QC metadata</span>
+<span class="func">setClass</span>(
+  <span class="str">"QCSummarizedExperiment"</span>,
+  contains = <span class="str">"SummarizedExperiment"</span>,
+  representation = <span class="func">representation</span>(qc_params = <span class="str">"list"</span>)
+)
+
+<span class="comment"># Register a method on the EXISTING BiocGenerics::show()</span>
+<span class="func">setMethod</span>(<span class="str">"show"</span>, <span class="str">"QCSummarizedExperiment"</span>,
+  <span class="kw">function</span>(object) {
+    <span class="func">callNextMethod</span>()                              <span class="comment"># default SE print</span>
+    cat(<span class="str">"\nQC params:\n"</span>)
+    <span class="func">str</span>(object@qc_params)
+  })
+
+<span class="comment"># Generic from Bioconductor is reused — users don't learn new names</span>
+<span class="func">dim</span>(qc_se); <span class="func">colData</span>(qc_se); <span class="func">assay</span>(qc_se, <span class="str">"counts"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">validity.R — typed slots + integrity check</span><pre><span class="comment"># setValidity() lets you check invariants at construction time</span>
+<span class="func">setClass</span>(
+  <span class="str">"PeakSet"</span>,
+  representation = <span class="func">representation</span>(
+    ranges = <span class="str">"GRanges"</span>,
+    scores = <span class="str">"numeric"</span>
+  )
+)
+
+<span class="func">setValidity</span>(<span class="str">"PeakSet"</span>, <span class="kw">function</span>(object) {
+  <span class="kw">if</span> (<span class="func">length</span>(object@ranges) != <span class="func">length</span>(object@scores))
+    <span class="kw">return</span>(<span class="str">"ranges and scores must be the same length"</span>)
+  <span class="kw">if</span> (<span class="func">any</span>(object@scores &lt; <span class="num">0</span>))
+    <span class="kw">return</span>(<span class="str">"scores must be non-negative"</span>)
+  <span class="kw">TRUE</span>
+})
+
+<span class="comment"># Invariant violations are caught at new("PeakSet", ...) time</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 8: pipes ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 6" data-en="TOPIC 6">主題 6</div>
+<h2 data-zh="七、|&gt; vs %&gt;%：新管線 vs magrittr" data-en="VII. |&gt; vs %&gt;%: native pipe vs magrittr">七、|&gt; vs %&gt;%：新管線 vs magrittr</h2>
+<div data-lang="zh">
+<p>R 4.1+ 內建 <code>|&gt;</code> (base pipe)，與 magrittr 的 <code>%&gt;%</code> 有微妙差異。新程式碼建議用 <code>|&gt;</code>——更快、不需相依、語法清晰；但若需要 <code>.</code> placeholder 或 <code>%&gt;%</code> 的特殊行為，仍可用 magrittr。</p>
+</div>
+<div data-lang="en">
+<p>R 4.1+ ships <code>|&gt;</code> (base pipe), subtly different from magrittr's <code>%&gt;%</code>. New code should prefer <code>|&gt;</code> — faster, no dependency, cleaner syntax; magrittr remains useful when you need its <code>.</code> placeholder or special behavior.</p>
+</div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="特性" data-en="Feature">特性</th>
+<th><code>|&gt;</code> (base, R 4.1+)</th>
+<th><code>%&gt;%</code> (magrittr)</th>
+</tr></thead><tbody>
+<tr><td data-zh="需要套件" data-en="Needs package">需要套件</td><td data-zh="否 (內建)" data-en="No (built-in)">否</td><td>magrittr / dplyr</td></tr>
+<tr><td data-zh="速度" data-en="Speed">速度</td><td data-zh="較快 (C-level)" data-en="Faster (C-level)">較快</td><td data-zh="多一層函式呼叫" data-en="One extra fn call">較慢</td></tr>
+<tr><td data-zh="placeholder" data-en="Placeholder">placeholder</td><td><code>_</code> (R 4.2+, 限 named arg)</td><td><code>.</code> (任意位置)</td></tr>
+<tr><td data-zh="RHS 必為呼叫" data-en="RHS must be a call">RHS 必為呼叫</td><td data-zh="是 (x |> f() 而非 x |> f)" data-en="Yes (x |> f() not x |> f)">是</td><td data-zh="否 (x %&gt;% f 也可)" data-en="No (x %&gt;% f works)">否</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">side_by_side.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">side_by_side.R</span><pre><span class="comment"># magrittr: . placeholder anywhere, RHS need not be a call</span>
+<span class="kw">library</span>(magrittr)
+counts %&gt;%
+  <span class="func">filter</span>(., gene == <span class="str">"BRCA1"</span>) %&gt;%
+  <span class="func">arrange</span>(desc(.$expression))
+
+<span class="comment"># Base |>: cleaner, faster; placeholder is _ (and only for named args)</span>
+counts |&gt;
+  <span class="func">filter</span>(gene == <span class="str">"BRCA1"</span>) |&gt;
+  <span class="func">arrange</span>(<span class="func">desc</span>(expression))
+
+<span class="comment"># Base |> requires the RHS to be a call. Lambda for non-call cases:</span>
+<span class="num">1</span>:<span class="num">10</span> |&gt; (\(x) x^<span class="num">2</span>)()           <span class="comment"># R 4.1+ lambda syntax</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 9: Decision tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個工具？" data-en="Which tool do I need?">該用哪個工具？</h2>
+
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要快速包裝一個 list 給 print 用」</strong> → <code>S3</code> (設 class 屬性 + 寫 <code>print.myclass</code>)</span><span data-lang="en"><strong>"Quick wrapper around a list with a print"</strong> → <code>S3</code> (set class attr + <code>print.myclass</code>)</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要寫 Bioconductor 套件或繼承 SummarizedExperiment」</strong> → <code>S4</code> + <code>BiocGenerics</code></span><span data-lang="en"><strong>"Writing a Bioconductor pkg or extending SummarizedExperiment"</strong> → <code>S4</code> + <code>BiocGenerics</code></span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要在 Shiny 模組中保留狀態 + 方法鏈」</strong> → <code>R6</code> (reference semantics)</span><span data-lang="en"><strong>"Stateful Shiny module with method chaining"</strong> → <code>R6</code> (reference semantics)</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要寫 dplyr 的薄包裝、讓使用者傳裸欄位名」</strong> → <code>{{ col }}</code> (embrace)</span><span data-lang="en"><strong>"Thin dplyr wrapper that accepts bare column names"</strong> → <code>{{ col }}</code> (embrace)</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要動態命名新欄位」</strong> → <code>:=</code> (walrus) + <code>!!</code></span><span data-lang="en"><strong>"Need a dynamic new column name"</strong> → <code>:=</code> + <code>!!</code></span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要做大量 O(1) 查表」</strong> → <code>new.env(hash = TRUE)</code> 當 hash map 用</span><span data-lang="en"><strong>"Heavy O(1) key lookups"</strong> → <code>new.env(hash = TRUE)</code> as a hash map</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q1.</strong> 下列哪個物件系統具有 <em>reference semantics</em> (在函式內修改會影響外部變數)？</p>
+<p data-lang="en"><strong>Q1.</strong> Which object system has <em>reference semantics</em> (mutation inside a function affects the outer variable)?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. S3</span><span data-lang="en">A. S3</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. R6</span><span data-lang="en">B. R6</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. S4</span><span data-lang="en">C. S4</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 三者都是 copy-on-modify</span><span data-lang="en">D. All three are copy-on-modify</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>R6 是 reference semantics — 物件在函式內被 mutate 後，外部變數也跟著變。S3/S4 都是 copy-on-modify。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> R6 uses reference semantics — mutating inside a function affects the outer variable. S3 and S4 are copy-on-modify.</div>
+</div>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q2.</strong> 你想寫一個 dplyr 薄包裝 <code>my_filter(df, col, val)</code>，讓使用者可以 <code>my_filter(iris, Species, "setosa")</code>。正確的實作是？</p>
+<p data-lang="en"><strong>Q2.</strong> You want a thin dplyr wrapper <code>my_filter(df, col, val)</code> usable as <code>my_filter(iris, Species, "setosa")</code>. Correct implementation?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. <code>df %&gt;% filter(col == val)</code></span><span data-lang="en">A. <code>df %&gt;% filter(col == val)</code></span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. <code>df %&gt;% filter(eval(col) == val)</code></span><span data-lang="en">B. <code>df %&gt;% filter(eval(col) == val)</code></span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. <code>df %&gt;% filter({{ col }} == val)</code></span><span data-lang="en">C. <code>df %&gt;% filter({{ col }} == val)</code></span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. <code>df %&gt;% filter(.data$col == val)</code></span><span data-lang="en">D. <code>df %&gt;% filter(.data$col == val)</code></span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong><code>{{ col }}</code> (embrace) 是 tidy eval 中將參數整段轉發給 dplyr 動詞的標準方式。A 會去找名為 col 的欄位；D 需要傳字串而非裸名。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> <code>{{ col }}</code> (embrace) is the canonical tidy-eval way to forward an argument to a dplyr verb. A looks for a literal column "col"; D needs the column as a string, not a bare name.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> 關於 <code>parent.frame()</code> 與 <code>environment()</code> 的差別，下列何者正確？</p>
+<p data-lang="en"><strong>Q3.</strong> About <code>parent.frame()</code> vs <code>environment()</code>, which is correct?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. <code>environment()</code> 回傳函式被「定義」處的 env (lexical)；<code>parent.frame()</code> 回傳函式被「呼叫」處的 env (dynamic)</span><span data-lang="en">A. <code>environment()</code> = the env where the function was DEFINED (lexical); <code>parent.frame()</code> = where it was CALLED (dynamic)</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 兩者完全相同，只是別名</span><span data-lang="en">B. They are aliases for the same thing</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. <code>parent.frame()</code> 一律回傳 globalenv()</span><span data-lang="en">C. <code>parent.frame()</code> always returns globalenv()</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. <code>environment()</code> 只能用在 R6 物件中</span><span data-lang="en">D. <code>environment()</code> only works inside R6 objects</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>這是 R 的核心 — lexical scoping (定義處) vs 呼叫鏈 (呼叫處)。NSE 與 <code>substitute()</code> 通常搭配 <code>parent.frame()</code> 取得呼叫者的變數。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> This is R's core distinction — lexical scoping (where defined) vs the call stack (where called). NSE with <code>substitute()</code> usually pairs with <code>parent.frame()</code> to access the caller's variables.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="advanced-python.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="A1 · 進階 Python" data-en="A1 · Advanced Python">A1 · 進階 Python</span></a>
+<a href="functional-programming.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="A3 · 函數式程式設計" data-en="A3 · Functional Programming">A3 · 函數式程式設計</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · A2 進階 R 與 tidy eval</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Interactive: S3 / S4 / R6 trade-off explorer
+const sysData = {
+  s3: {
+    pros_zh: "✓ 輕量 (一行 class() 即可)、零學習曲線、與 base R / lm / glm 一致",
+    pros_en: "✓ Lightweight (one line: class()), zero learning curve, matches base R / lm / glm",
+    cons_zh: "✗ 無 slot 型別檢查、命名衝突風險高 (print.qc_result)、單一 dispatch",
+    cons_en: "✗ No typed slots, naming collision risk (print.qc_result), single dispatch only",
+    when_zh: "→ 小工具回傳物件、研究腳本、不打算上 CRAN/Bioconductor",
+    when_en: "→ Small utilities, research scripts, not heading to CRAN/Bioconductor",
+  },
+  s4: {
+    pros_zh: "✓ 型別嚴謹 (slot 強制)、多重 dispatch、setValidity 整體性檢查、Bioconductor 標準",
+    pros_en: "✓ Strict types (typed slots), multi-dispatch, setValidity for invariants, Bioconductor standard",
+    cons_zh: "✗ 語法繁瑣 (setClass / setGeneric / setMethod)、學習曲線高、debug 較難",
+    cons_en: "✗ Verbose (setClass / setGeneric / setMethod), steep learning curve, harder to debug",
+    when_zh: "→ Bioconductor 套件、需要繼承 SummarizedExperiment、團隊正式產品",
+    when_en: "→ Bioconductor packages, extending SummarizedExperiment, team production code",
+  },
+  r6: {
+    pros_zh: "✓ Reference semantics (避免大物件重複複製)、method chaining、私有成員 (private)、近似 Python class",
+    pros_en: "✓ Reference semantics (avoid copying huge objects), method chaining, private members, like Python class",
+    cons_zh: "✗ 違反 R 「函式式 + immutable」傳統、debug 較難 (side effect)、無多重 dispatch",
+    cons_en: "✗ Breaks R's functional/immutable tradition, harder to debug (side effects), no multi-dispatch",
+    when_zh: "→ Shiny modules、plumber API、長期保留狀態的 background process",
+    when_en: "→ Shiny modules, plumber APIs, long-lived stateful background processes",
+  },
+};
+function updateSysCompare(sys){
+  const cur = sysData[sys];
+  const lang = document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
+  document.getElementById('sysPros').textContent = lang === 'en' ? cur.pros_en : cur.pros_zh;
+  document.getElementById('sysCons').textContent = lang === 'en' ? cur.cons_en : cur.cons_zh;
+  document.getElementById('sysWhen').textContent = lang === 'en' ? cur.when_en : cur.when_zh;
+}
+document.querySelectorAll('.sys-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sys-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    updateSysCompare(btn.dataset.sys);
+  });
+});
+updateSysCompare('s3');
+// Re-render on language switch
+document.addEventListener('langchange', () => {
+  const active = document.querySelector('.sys-btn.active');
+  if (active) updateSysCompare(active.dataset.sys);
+});
+</script>
+</body></html>

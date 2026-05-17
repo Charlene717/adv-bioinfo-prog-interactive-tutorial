@@ -1,0 +1,450 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>E2: 工作流引擎 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="big-data-tables.html">BigData</a></li>
+    <li><a href="git-collaboration.html">Git</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="package-development.html">Pkg</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html" class="active">Workflow</a></li>
+    <li><a href="hpc-cloud-bio.html">HPC</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK E · TOPIC 18 / 20</div>
+<h1 data-zh="工作流引擎：Snakemake、Nextflow、WDL" data-en="Workflow Engines: Snakemake, Nextflow, WDL">工作流引擎：Snakemake、Nextflow、WDL</h1>
+<p class="subtitle" data-lang="zh">當你的 shell 腳本擴展到 10,000 樣本時就會崩潰——宣告式工作流引擎讓你只描述「誰依賴誰」，由引擎負責平行化、重試、失敗續跑與雲端調度。</p>
+<p class="subtitle" data-lang="en">Shell scripts collapse at 10,000 samples — declarative workflow engines let you describe only "what depends on what" and delegate parallelization, retries, resume, and cloud scheduling to the engine.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1 ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼需要工作流引擎？" data-en="Why workflow engines?">為什麼需要工作流引擎？</h2>
+<div data-lang="zh">
+<p>典型的 bulk RNA-seq pipeline 至少有 6 個步驟：QC → trim → align → quantify → DESeq2 → report。每個步驟對每個樣本都要跑一次。若你有 200 個樣本，shell 腳本要承擔：</p>
+<ul>
+<li><strong>相依管理</strong>：哪個 step 必須先完成？輸出檔在哪？</li>
+<li><strong>平行調度</strong>：哪些 step 可平行？對 SLURM / AWS Batch 怎麼提交？</li>
+<li><strong>失敗續跑</strong>：第 150 個樣本壞了，重跑時要從哪重啟？</li>
+<li><strong>環境隔離</strong>：每個 tool 的 conda env / Docker image 該怎麼掛？</li>
+<li><strong>觀測性</strong>：哪些 job 慢？哪些卡住？</li>
+</ul>
+<p>工作流引擎將上述全部抽象化。三大主流：<strong>Snakemake</strong> (Python 系，生命科學最廣)、<strong>Nextflow DSL2</strong> (Groovy/Java 系，nf-core 社群，雲端最強)、<strong>WDL/Cromwell</strong> (GATK Best Practices、Broad、Terra)。</p>
+</div>
+<div data-lang="en">
+<p>A typical bulk RNA-seq pipeline has 6+ steps: QC → trim → align → quantify → DESeq2 → report. Each step runs per sample. With 200 samples, a shell script must handle:</p>
+<ul>
+<li><strong>Dependency tracking</strong>: which step must finish first? where are outputs?</li>
+<li><strong>Parallel scheduling</strong>: which steps parallelize? how do we submit to SLURM / AWS Batch?</li>
+<li><strong>Resume on failure</strong>: sample 150 crashed — where do we restart?</li>
+<li><strong>Environment isolation</strong>: how do we attach each tool's conda env / Docker image?</li>
+<li><strong>Observability</strong>: which jobs are slow? which are stuck?</li>
+</ul>
+<p>Workflow engines abstract all of this. Three major systems: <strong>Snakemake</strong> (Python-based, widest in life sciences), <strong>Nextflow DSL2</strong> (Groovy/Java, the nf-core community, strongest cloud support), <strong>WDL/Cromwell</strong> (GATK Best Practices, Broad, Terra).</p>
+</div>
+</section>
+
+<!-- ===== Section 2: Comparison table ===== -->
+<section class="section">
+<div class="section-label" data-zh="比較" data-en="COMPARISON">比較</div>
+<h2 data-zh="三大引擎比較" data-en="Three engines compared">三大引擎比較</h2>
+<table class="comp-table"><thead><tr>
+<th>—</th>
+<th>Snakemake</th>
+<th>Nextflow DSL2</th>
+<th>WDL / Cromwell</th>
+</tr></thead><tbody>
+<tr><td data-zh="語法基底" data-en="Syntax base">語法基底</td><td>Python</td><td>Groovy / Java</td><td data-zh="WDL 自家 DSL" data-en="Own WDL DSL">WDL 自家 DSL</td></tr>
+<tr><td data-zh="相依模型" data-en="Dep model">相依模型</td><td data-zh="檔案 (output → input)" data-en="File (output → input)">檔案 (output → input)</td><td data-zh="Channel / DataFlow" data-en="Channel / DataFlow">Channel / DataFlow</td><td data-zh="Task call DAG" data-en="Task call DAG">Task call DAG</td></tr>
+<tr><td data-zh="社群 pipeline" data-en="Community pipelines">社群 pipeline</td><td>snakemake-workflows</td><td>nf-core (100+ pipelines)</td><td>GATK Best Practices, Terra</td></tr>
+<tr><td data-zh="雲端執行" data-en="Cloud executor">雲端執行</td><td data-zh="可 (Kubernetes、Tibanna)" data-en="Yes (Kubernetes, Tibanna)">可</td><td data-zh="極強 (AWS、Azure、GCP、Tower)" data-en="Excellent (AWS/Azure/GCP/Tower)">極強</td><td data-zh="極強 (Terra 原生)" data-en="Excellent (Terra-native)">極強</td></tr>
+<tr><td data-zh="觀測平台" data-en="Observability">觀測平台</td><td>Panoptes, snakemake-report</td><td>Seqera Tower</td><td>Cromwell UI, Terra</td></tr>
+<tr><td data-zh="入門曲線" data-en="Learning curve">入門曲線</td><td data-zh="低 (Python 親和)" data-en="Low (Python-like)">低</td><td data-zh="中 (Channel 概念)" data-en="Medium (Channel concept)">中</td><td data-zh="中-高" data-en="Medium-high">中-高</td></tr>
+<tr><td data-zh="適用場景" data-en="Best for">適用場景</td><td data-zh="實驗室自製、Python-heavy、學術" data-en="Lab-grown, Python-heavy, academic">實驗室自製、學術</td><td data-zh="大規模雲端、社群已有 pipeline" data-en="Large-scale cloud, community pipelines">大規模雲端</td><td data-zh="GATK / Broad 生態、Terra 客戶" data-en="GATK / Broad ecosystem, Terra users">GATK 生態</td></tr>
+</tbody></table>
+</section>
+
+<!-- ===== Section 3: Snakemake ===== -->
+<section class="section">
+<div class="section-label" data-zh="實作 1" data-en="HANDS-ON 1">實作 1</div>
+<h2 data-zh="Snakemake — Pythonic 規則檔" data-en="Snakemake — Pythonic rule files">Snakemake — Pythonic 規則檔</h2>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">Snakefile</button>
+<button class="code-tab-btn">config.yaml</button>
+<button class="code-tab-btn">profile/slurm</button>
+</div>
+<div class="code-tab-content active"><span class="filename">Snakefile</span><pre><span class="kw">configfile</span>: <span class="str">"config.yaml"</span>
+SAMPLES = config[<span class="str">"samples"</span>]
+
+<span class="kw">rule</span> <span class="func">all</span>:
+    input: expand(<span class="str">"results/vcf/{s}.vcf.gz"</span>, s=SAMPLES)
+
+<span class="kw">rule</span> <span class="func">trim</span>:
+    input:  fq1=<span class="str">"raw/{s}_R1.fq.gz"</span>, fq2=<span class="str">"raw/{s}_R2.fq.gz"</span>
+    output: o1=<span class="str">"trim/{s}_R1.fq.gz"</span>, o2=<span class="str">"trim/{s}_R2.fq.gz"</span>
+    conda:  <span class="str">"envs/fastp.yaml"</span>
+    threads: 4
+    shell:  <span class="str">"fastp -i {input.fq1} -I {input.fq2} -o {output.o1} -O {output.o2} -w {threads}"</span>
+
+<span class="kw">rule</span> <span class="func">align</span>:
+    input:  fq1=<span class="kw">rules</span>.trim.output.o1, fq2=<span class="kw">rules</span>.trim.output.o2,
+            idx=config[<span class="str">"bwa_index"</span>]
+    output: bam=<span class="str">"bam/{s}.bam"</span>
+    conda:  <span class="str">"envs/bwa.yaml"</span>
+    threads: 16
+    shell:  <span class="str">"bwa mem -t {threads} {input.idx} {input.fq1} {input.fq2} | "</span>
+            <span class="str">"samtools sort -@ {threads} -o {output.bam} -"</span>
+
+<span class="kw">rule</span> <span class="func">call_variants</span>:
+    input:  bam=<span class="str">"bam/{s}.bam"</span>, ref=config[<span class="str">"reference"</span>]
+    output: vcf=<span class="str">"results/vcf/{s}.vcf.gz"</span>
+    container: <span class="str">"docker://broadinstitute/gatk:4.5.0"</span>
+    shell:  <span class="str">"gatk HaplotypeCaller -R {input.ref} -I {input.bam} -O {output.vcf}"</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">config.yaml</span><pre>samples:
+  - SRR001
+  - SRR002
+  - SRR003
+reference: refs/hg38.fa
+bwa_index: refs/hg38.fa
+threads: 16
+</pre></div>
+<div class="code-tab-content"><span class="filename">profiles/slurm/config.yaml — submit to SLURM</span><pre>executor: slurm
+default-resources:
+  slurm_partition: <span class="str">"compute"</span>
+  mem_mb: 8000
+  runtime: <span class="num">120</span>
+set-resources:
+  align:
+    mem_mb: 32000
+    runtime: <span class="num">240</span>
+jobs: <span class="num">200</span>
+use-conda: <span class="kw">True</span>
+use-apptainer: <span class="kw">True</span>
+
+<span class="comment"># Run with: snakemake --profile profiles/slurm</span>
+</pre></div>
+</div>
+
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>核心優勢：</strong>Snakemake 用「output 檔已存在 → skip」做續跑——重啟時引擎自動只跑失敗的 jobs。配合 <code>--rerun-incomplete</code> 處理半成品檔。</span>
+<span data-lang="en"><strong>Key strength:</strong> Snakemake resumes via "output exists → skip" — engine reruns only failed jobs. Use <code>--rerun-incomplete</code> for partial outputs.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 4: Nextflow ===== -->
+<section class="section">
+<div class="section-label" data-zh="實作 2" data-en="HANDS-ON 2">實作 2</div>
+<h2 data-zh="Nextflow DSL2 — Channel 與 nf-core" data-en="Nextflow DSL2 — Channels & nf-core">Nextflow DSL2 — Channel 與 nf-core</h2>
+<div data-lang="zh"><p>Nextflow 的核心抽象是 <strong>Channel</strong>——資料流。Process 之間靠 channel 傳資料而非靠檔案路徑相依，這讓 Nextflow 對雲端 (S3、GCS) 與容器調度極友好。<strong>nf-core</strong> 社群已維護 100+ 個生產級 pipeline (rnaseq、sarek、scrnaseq、taxprofiler)。</p></div>
+<div data-lang="en"><p>Nextflow's core abstraction is the <strong>Channel</strong> — a dataflow stream. Processes pass data via channels rather than file paths, making Nextflow exceptionally cloud-friendly (S3, GCS) and container-aware. The <strong>nf-core</strong> community maintains 100+ production-grade pipelines (rnaseq, sarek, scrnaseq, taxprofiler).</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">main.nf</button>
+<button class="code-tab-btn">nextflow.config</button>
+<button class="code-tab-btn">nf-core CLI</button>
+</div>
+<div class="code-tab-content active"><span class="filename">main.nf — DSL2 pipeline</span><pre>nextflow.enable.dsl = <span class="num">2</span>
+
+<span class="kw">process</span> <span class="func">TRIM</span> {
+    container <span class="str">'biocontainers/fastp:0.23.4--h5f740d0_1'</span>
+    cpus <span class="num">4</span>
+    <span class="kw">input</span>: tuple val(sid), path(fq1), path(fq2)
+    <span class="kw">output</span>: tuple val(sid), path(<span class="str">"${sid}_R1.tr.fq.gz"</span>), path(<span class="str">"${sid}_R2.tr.fq.gz"</span>)
+    <span class="kw">script</span>:
+    <span class="str">"""
+    fastp -i $fq1 -I $fq2 -o ${sid}_R1.tr.fq.gz -O ${sid}_R2.tr.fq.gz -w $task.cpus
+    """</span>
+}
+
+<span class="kw">process</span> <span class="func">ALIGN</span> {
+    container <span class="str">'biocontainers/bwa-mem2:2.2.1--he513fc3_0'</span>
+    cpus <span class="num">16</span>; memory <span class="str">'32 GB'</span>
+    <span class="kw">input</span>: tuple val(sid), path(fq1), path(fq2)
+           path  idx
+    <span class="kw">output</span>: tuple val(sid), path(<span class="str">"${sid}.bam"</span>)
+    <span class="kw">script</span>:
+    <span class="str">"""
+    bwa-mem2 mem -t $task.cpus $idx $fq1 $fq2 | samtools sort -@ $task.cpus -o ${sid}.bam -
+    """</span>
+}
+
+<span class="kw">workflow</span> {
+    samples_ch = Channel.fromFilePairs(<span class="str">'raw/*_{R1,R2}.fq.gz'</span>)
+                         .map { sid, fqs -&gt; tuple(sid, fqs[<span class="num">0</span>], fqs[<span class="num">1</span>]) }
+    idx_ch     = Channel.value(file(params.idx))
+
+    TRIM(samples_ch)
+    ALIGN(TRIM.out, idx_ch)
+}
+</pre></div>
+<div class="code-tab-content"><span class="filename">nextflow.config — multi-environment</span><pre>params {
+    idx = <span class="str">'refs/hg38.bwa'</span>
+    outdir = <span class="str">'results'</span>
+}
+
+profiles {
+    standard { docker.enabled = <span class="kw">true</span> }
+    slurm    { process.executor = <span class="str">'slurm'</span>; apptainer.enabled = <span class="kw">true</span> }
+    aws {
+        process.executor = <span class="str">'awsbatch'</span>
+        process.queue    = <span class="str">'genomics-spot'</span>
+        aws.region       = <span class="str">'us-east-1'</span>
+        workDir          = <span class="str">'s3://my-bucket/work'</span>
+    }
+}
+</pre></div>
+<div class="code-tab-content"><span class="filename">nf-core — production pipelines</span><pre><span class="comment"># Install</span>
+<span class="kw">pip install</span> nf-core
+
+<span class="comment"># Browse community pipelines</span>
+<span class="kw">nf-core</span> list
+
+<span class="comment"># Pull a curated RNA-seq pipeline</span>
+<span class="kw">nf-core</span> download rnaseq --revision 3.14.0 --container-system singularity
+
+<span class="comment"># Generate a sample sheet template</span>
+<span class="kw">nf-core</span> create --name myassay --description <span class="str">"my pipeline"</span> --author <span class="str">"Charlene"</span>
+
+<span class="comment"># Run with config profile</span>
+<span class="kw">nextflow run</span> nf-core/rnaseq -r 3.14.0 -profile docker \
+    --input samplesheet.csv --outdir results/ \
+    --genome GRCh38
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: WDL ===== -->
+<section class="section">
+<div class="section-label" data-zh="實作 3" data-en="HANDS-ON 3">實作 3</div>
+<h2 data-zh="WDL / Cromwell — Broad / GATK 生態" data-en="WDL / Cromwell — Broad / GATK ecosystem">WDL / Cromwell — Broad / GATK 生態</h2>
+<div data-lang="zh"><p>WDL (Workflow Description Language) 是 Broad Institute 主導的格式，由 Cromwell 引擎執行。GATK Best Practices、Terra (Broad 雲端平台)、DNAnexus 都以 WDL 為一等公民。若你做大規模 germline / somatic 變異呼叫，WDL 通常是最少抵抗路徑。</p></div>
+<div data-lang="en"><p>WDL (Workflow Description Language) is the Broad Institute-led format executed by Cromwell. GATK Best Practices, Terra (Broad's cloud platform), and DNAnexus all treat WDL as first-class. For large-scale germline/somatic variant calling, WDL is usually the path of least resistance.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">align.wdl</button>
+<button class="code-tab-btn">inputs.json</button>
+</div>
+<div class="code-tab-content active"><span class="filename">align.wdl — WDL 1.1</span><pre><span class="kw">version</span> 1.1
+
+<span class="kw">workflow</span> <span class="func">AlignAndCall</span> {
+  <span class="kw">input</span> {
+    Array[Pair[File, File]] sample_pairs
+    File ref_fa
+    File ref_idx
+  }
+  scatter (p in sample_pairs) {
+    call Trim  { input: fq1 = p.left, fq2 = p.right }
+    call Align { input: fq1 = Trim.o1, fq2 = Trim.o2, ref = ref_fa, idx = ref_idx }
+  }
+  <span class="kw">output</span> { Array[File] bams = Align.bam }
+}
+
+<span class="kw">task</span> <span class="func">Align</span> {
+  <span class="kw">input</span> { File fq1; File fq2; File ref; File idx }
+  <span class="kw">command</span> &lt;&lt;&lt;
+    bwa mem -t 16 ~{idx} ~{fq1} ~{fq2} | samtools sort -@ 16 -o out.bam -
+  &gt;&gt;&gt;
+  runtime {
+    docker: <span class="str">"broadinstitute/gatk:4.5.0"</span>
+    cpu: 16
+    memory: <span class="str">"32G"</span>
+  }
+  <span class="kw">output</span> { File bam = <span class="str">"out.bam"</span> }
+}
+</pre></div>
+<div class="code-tab-content"><span class="filename">inputs.json — provide values</span><pre>{
+  <span class="str">"AlignAndCall.sample_pairs"</span>: [
+    { <span class="str">"left"</span>: <span class="str">"s3://bkt/SRR001_R1.fq.gz"</span>, <span class="str">"right"</span>: <span class="str">"s3://bkt/SRR001_R2.fq.gz"</span> }
+  ],
+  <span class="str">"AlignAndCall.ref_fa"</span>:  <span class="str">"s3://bkt/hg38.fa"</span>,
+  <span class="str">"AlignAndCall.ref_idx"</span>: <span class="str">"s3://bkt/hg38.fa.bwt"</span>
+}
+
+<span class="comment"># Submit to Terra, DNAnexus, or local Cromwell</span>
+<span class="comment"># java -jar cromwell.jar run align.wdl -i inputs.json</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: Interactive ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="工作流引擎選擇器" data-en="Workflow engine chooser">工作流引擎選擇器</h2>
+<div class="interactive-panel">
+<p data-lang="zh" style="font-size:.92rem">回答以下 4 個問題，引擎為你推薦合適的工具。</p>
+<p data-lang="en" style="font-size:.92rem">Answer 4 questions; the panel recommends an engine.</p>
+
+<div class="slider-group">
+<label><span data-zh="實驗室規模" data-en="Lab size">實驗室規模</span> <span id="vLab">small</span></label>
+<select id="qLab" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--c-border)">
+<option value="small" data-zh="小型 (1-5 人)" data-en="Small (1-5)">小型 (1-5 人)</option>
+<option value="medium" data-zh="中型 (6-30 人)" data-en="Medium (6-30)">中型 (6-30 人)</option>
+<option value="large" data-zh="大型 (機構級)" data-en="Large (institutional)">大型 (機構級)</option>
+</select>
+</div>
+
+<div class="slider-group">
+<label><span data-zh="主要執行環境" data-en="Primary environment">主要執行環境</span> <span id="vEnv">local</span></label>
+<select id="qEnv" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--c-border)">
+<option value="local" data-zh="本機 / 工作站" data-en="Local / workstation">本機 / 工作站</option>
+<option value="hpc" data-zh="HPC / SLURM 叢集" data-en="HPC / SLURM cluster">HPC / SLURM 叢集</option>
+<option value="cloud" data-zh="雲端 (AWS/GCP/Azure)" data-en="Cloud (AWS/GCP/Azure)">雲端</option>
+<option value="terra" data-zh="Terra / DNAnexus" data-en="Terra / DNAnexus">Terra / DNAnexus</option>
+</select>
+</div>
+
+<div class="slider-group">
+<label><span data-zh="主要語言偏好" data-en="Language preference">主要語言偏好</span> <span id="vLang">python</span></label>
+<select id="qLang" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--c-border)">
+<option value="python" data-zh="Python 為主" data-en="Python primary">Python 為主</option>
+<option value="r" data-zh="R 為主" data-en="R primary">R 為主</option>
+<option value="mixed" data-zh="混合 / 不限" data-en="Mixed / agnostic">混合</option>
+</select>
+</div>
+
+<div class="slider-group">
+<label><span data-zh="是否需要既有 community pipeline" data-en="Need community pipelines?">是否需要既有 community pipeline</span> <span id="vCom">yes</span></label>
+<select id="qCom" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--c-border)">
+<option value="yes" data-zh="是 — 想直接用 nf-core / GATK 等" data-en="Yes — use nf-core / GATK">是</option>
+<option value="no" data-zh="否 — 我會自己寫" data-en="No — building my own">否</option>
+</select>
+</div>
+
+<div id="wfRecommend" style="margin-top:18px;padding:18px;background:var(--c-accent-light);border-radius:var(--radius);border:2px solid var(--c-accent)">
+<strong data-zh="推薦：" data-en="Recommendation: ">推薦：</strong><span id="wfTool">—</span>
+<p id="wfReason" style="margin-top:8px;font-size:.92rem;color:var(--c-ink-light)">—</p>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 7: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策" data-en="DECISION">決策</div>
+<h2 data-zh="快速決策樹" data-en="Quick decision tree">快速決策樹</h2>
+<div class="decision-tree">
+<h4 data-zh="場景 → 引擎" data-en="Scenario → Engine">場景 → 引擎</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我有 5 個 step、Python 為主、HPC 環境」</strong> → <strong>Snakemake</strong>。Python 親和、規則檔可讀性最高、HPC profile 完備。</span><span data-lang="en"><strong>"5 steps, Python-primary, HPC"</strong> → <strong>Snakemake</strong>. Python-friendly, most-readable rules, mature HPC profiles.</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要在 AWS 跑 RNA-seq 1000 樣本、想用社群維護的 pipeline」</strong> → <strong>Nextflow / nf-core</strong>。</span><span data-lang="en"><strong>"AWS, 1000-sample RNA-seq, community-maintained"</strong> → <strong>Nextflow / nf-core</strong>.</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我做 germline 變異呼叫、目標部署到 Terra」</strong> → <strong>WDL / Cromwell</strong>。GATK Best Practices 都是 WDL。</span><span data-lang="en"><strong>"Germline variant calling, deploy to Terra"</strong> → <strong>WDL / Cromwell</strong>. GATK Best Practices ship as WDL.</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我做的不是 omics，而是非生物學的 ETL」</strong> → <strong>Apache Airflow / Prefect / Dagster</strong>，不是生物學專用引擎。</span><span data-lang="en"><strong>"Non-omics ETL"</strong> → <strong>Airflow / Prefect / Dagster</strong>, not bio-specific engines.</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> Snakemake 在重啟一個失敗的 pipeline 時，預設用什麼方式判斷哪些 job 不必重跑？</p>
+<p data-lang="en"><strong>Q1.</strong> When restarting a failed Snakemake pipeline, how does it decide which jobs to skip?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 查看 SQLite 記錄資料庫</span><span data-lang="en">A. Reads from a SQLite database</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 透過 git commit hash 比對</span><span data-lang="en">B. By git commit hash</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 檢查 output 檔案是否存在且時間戳合理</span><span data-lang="en">C. Checks if output files exist with sane timestamps</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 詢問 SLURM 排程器</span><span data-lang="en">D. Queries the SLURM scheduler</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Snakemake 用「output 已存在 → skip」做斷點續跑；若懷疑檔案不完整可用 <code>--rerun-incomplete</code>。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Snakemake resumes by checking output existence; use <code>--rerun-incomplete</code> if files may be partial.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 你打算在 AWS 上跑 1000 個 RNA-seq 樣本，且希望用一個已驗證的 pipeline。最少阻力的選擇？</p>
+<p data-lang="en"><strong>Q2.</strong> You plan to run 1000 RNA-seq samples on AWS using a validated pipeline. Path of least resistance?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 自己寫 bash 加上 GNU parallel</span><span data-lang="en">A. Write bash + GNU parallel yourself</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. Nextflow + nf-core/rnaseq + AWS Batch profile</span><span data-lang="en">B. Nextflow + nf-core/rnaseq + AWS Batch profile</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 用 Excel 紀錄樣本 ID</span><span data-lang="en">C. Track samples in Excel</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. WDL 是必選 (因為它最快)</span><span data-lang="en">D. WDL is mandatory (it's the fastest)</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>nf-core/rnaseq 是社群維護、有測試、有 AWS Batch profile 的標準選擇。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> nf-core/rnaseq is community-maintained, tested, and ships with an AWS Batch profile.</div>
+</div>
+
+<div class="quiz-q" data-correct="D">
+<p data-lang="zh"><strong>Q3.</strong> Nextflow DSL2 中，process 之間傳遞資料的核心抽象是？</p>
+<p data-lang="en"><strong>Q3.</strong> In Nextflow DSL2, what is the core abstraction passed between processes?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 環境變數</span><span data-lang="en">A. Environment variables</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 共享記憶體</span><span data-lang="en">B. Shared memory</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. SQLite 資料表</span><span data-lang="en">C. SQLite table</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. Channel — 資料流物件</span><span data-lang="en">D. Channel — a dataflow object</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 D。</strong>Channel 是 Nextflow 的核心；它讓 process 之間以資料流而非檔案路徑相依，這正是 Nextflow 對雲端友好的原因。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: D.</strong> Channels are Nextflow's core abstraction. Processes depend on data streams rather than file paths — the key reason Nextflow is cloud-friendly.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="docker-containers.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="E1 · 容器化 (Docker / Apptainer)" data-en="E1 · Containers (Docker/Apptainer)">E1 · 容器化</span></a>
+<a href="hpc-cloud-bio.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="E3 · HPC 與雲端" data-en="E3 · HPC & Cloud">E3 · HPC 與雲端</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · E2 工作流引擎</footer>
+
+<script src="i18n.js"></script>
+<script>
+function updateWfRec(){
+  const lab = document.getElementById('qLab').value;
+  const env = document.getElementById('qEnv').value;
+  const lng = document.getElementById('qLang').value;
+  const com = document.getElementById('qCom').value;
+  document.getElementById('vLab').textContent = lab;
+  document.getElementById('vEnv').textContent = env;
+  document.getElementById('vLang').textContent = lng;
+  document.getElementById('vCom').textContent = com;
+
+  let tool='', why_zh='', why_en='';
+  if(env==='terra'){
+    tool='WDL / Cromwell';
+    why_zh='Terra/DNAnexus 對 WDL 為原生支援，GATK Best Practices 也以 WDL 提供。';
+    why_en='Terra/DNAnexus natively support WDL; GATK Best Practices ship as WDL.';
+  } else if(com==='yes' && env!=='local'){
+    tool='Nextflow + nf-core';
+    why_zh='nf-core 維護 100+ 生產級 pipeline，雲端與 HPC profile 完備，是現成 pipeline 的首選。';
+    why_en='nf-core maintains 100+ production pipelines with mature cloud/HPC profiles — the first choice for ready-made pipelines.';
+  } else if(lng==='python' || lng==='mixed'){
+    tool='Snakemake';
+    why_zh='Python 親和、規則檔最易讀；HPC / 本機環境配置最簡單，學術小團隊最常見。';
+    why_en='Python-friendly with the most readable rule files; easiest HPC/local setup — the academic small-team default.';
+  } else if(lng==='r'){
+    tool='Snakemake (with conda envs)';
+    why_zh='Snakemake 本身可調用任何 R 腳本；雖非 R 原生但仍最簡單。R 內若僅做分析步驟亦可考慮 targets 套件。';
+    why_en='Snakemake calls any R script; simplest even though not R-native. Consider the targets R package for analyses entirely in R.';
+  } else {
+    tool='Nextflow';
+    why_zh='大型專案、雲端執行、需要 channel 模型做動態 DAG。';
+    why_en='Large projects, cloud execution, dynamic DAGs via channels.';
+  }
+  document.getElementById('wfTool').textContent = tool;
+  const reasonEl = document.getElementById('wfReason');
+  const cur = (window.I18n && window.I18n.get && window.I18n.get()) || 'zh';
+  reasonEl.textContent = cur==='zh' ? why_zh : why_en;
+  reasonEl.dataset.zh = why_zh;
+  reasonEl.dataset.en = why_en;
+}
+['qLab','qEnv','qLang','qCom'].forEach(id=>document.getElementById(id).addEventListener('change', updateWfRec));
+document.addEventListener('langchange', updateWfRec);
+updateWfRec();
+</script>
+</body></html>

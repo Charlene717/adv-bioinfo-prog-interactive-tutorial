@@ -1,0 +1,675 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>A4: 錯誤處理與結構化日誌 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html" class="active">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK A · TOPIC 4 / 20</div>
+<h1 data-zh="錯誤處理與結構化日誌：讓 pipeline 失敗時你能 debug" data-en="Error handling & structured logging: debugging pipelines that fail">錯誤處理與結構化日誌：讓 pipeline 失敗時你能 debug</h1>
+<p class="subtitle" data-lang="zh">try / except 階層、自訂例外、R 的 tryCatch + withCallingHandlers、結構化日誌 (loguru、logger、lgr)、JSON log、log level 策略、Snakemake / Nextflow log 接管、Sentry 概覽。</p>
+<p class="subtitle" data-lang="en">try / except hierarchy, custom exceptions, R's tryCatch + withCallingHandlers, structured logging (loguru, logger, lgr), JSON logs, log-level strategy, Snakemake/Nextflow log capture, Sentry overview.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼結構化日誌比 print 重要？" data-en="Why structured logging beats print()">為什麼結構化日誌比 print 重要？</h2>
+<div data-lang="zh">
+<p>當你的 pipeline 跑 3 天後在第 487 個樣本掛掉，下列三個問題決定你能不能修：</p>
+<ul>
+<li><strong>哪個樣本？</strong> <code>print(f"processing {sample}")</code> 太多會淹沒在 stdout，且 cluster 通常只保留 stderr / log file。</li>
+<li><strong>哪個步驟？</strong> Snakemake / Nextflow job 內部需要結構化 log 才知道是 align / call / annotate 階段失敗。</li>
+<li><strong>什麼狀態？</strong> 失敗當下的記憶體用量、處理進度、傳入參數，缺一不可。</li>
+</ul>
+<p>用 <strong>結構化日誌</strong> (每筆 log 帶 timestamp / level / sample_id / step / extra fields) + <strong>分層的例外</strong>，這三個問題在 cluster 上 <code>grep</code> 就能答出。本頁六個主題：<strong>例外階層</strong>、<strong>自訂 Exception</strong>、<strong>R 的條件系統</strong>、<strong>結構化日誌 (Python / R)</strong>、<strong>workflow engine 整合</strong>、<strong>Sentry 概覽</strong>。</p>
+</div>
+<div data-lang="en">
+<p>When your pipeline crashes at sample #487 after 3 days, three questions decide whether you can fix it:</p>
+<ul>
+<li><strong>Which sample?</strong> <code>print(f"processing {sample}")</code> floods stdout; clusters usually keep only stderr/log files.</li>
+<li><strong>Which step?</strong> Inside a Snakemake/Nextflow job, structured logs tell you whether align / call / annotate failed.</li>
+<li><strong>What was the state?</strong> Memory usage, progress, parameters at the moment of failure — all needed.</li>
+</ul>
+<p>With <strong>structured logging</strong> (every log has timestamp / level / sample_id / step / extra fields) plus a <strong>layered exception hierarchy</strong>, these become a <code>grep</code> away on a cluster. Topics: <strong>exception hierarchy</strong>, <strong>custom exceptions</strong>, <strong>R conditions</strong>, <strong>structured logging (Py/R)</strong>, <strong>workflow integration</strong>, <strong>Sentry</strong>.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>核心法則：</strong>「log 是給未來的你看的」。三 個月後你只能看到 log file，無法重現當下的環境。當下多寫一行 <code>log.info("loaded %s reads from %s", n, path, extra={"sample":sid})</code>，未來省你三小時 debug。</span>
+<span data-lang="en"><strong>Core rule:</strong> "Logs are written for future-you." Three months later you only have the log file — no rerun of the environment. One extra line now (<code>log.info("loaded %s reads from %s", n, path, extra={"sample":sid})</code>) saves three hours of future debugging.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Python exception hierarchy ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Python 例外階層與 raise from" data-en="I. Python exception hierarchy & raise from">一、Python 例外階層與 raise from</h2>
+<div data-lang="zh">
+<p>Python 的 Exception 是 class 階層。捕捉 <code>BaseException</code> 等於連 <code>KeyboardInterrupt</code> 都吞掉——絕對不要這樣做。實務上的順序：(1) 捕最具體的，(2) 越上層越廣，(3) <code>raise from</code> 串接因果鏈。</p>
+</div>
+<div data-lang="en">
+<p>Python's Exception forms a class hierarchy. Catching <code>BaseException</code> swallows even <code>KeyboardInterrupt</code> — never do that. In practice: (1) catch the most specific first, (2) broader cases later, (3) <code>raise from</code> to chain the cause.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">try_except.py</button>
+<button class="code-tab-btn">custom_exc.py</button>
+<button class="code-tab-btn">raise_from.py</button>
+<button class="code-tab-btn">exception_groups.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">try_except.py — order matters: specific first</span><pre><span class="kw">import</span> json, logging
+log = logging.getLogger(__name__)
+
+<span class="kw">def</span> <span class="func">load_config</span>(path: str) -&gt; <span class="kw">dict</span>:
+    <span class="kw">try</span>:
+        <span class="kw">with</span> open(path) <span class="kw">as</span> f:
+            <span class="kw">return</span> json.load(f)
+    <span class="kw">except</span> FileNotFoundError:
+        log.error(<span class="str">"Config %s not found"</span>, path)
+        <span class="kw">raise</span>                                <span class="comment"># let caller decide</span>
+    <span class="kw">except</span> json.JSONDecodeError <span class="kw">as</span> e:
+        log.error(<span class="str">"Config %s malformed: %s"</span>, path, e)
+        <span class="kw">raise</span> <span class="cls">ValueError</span>(<span class="str">f"Invalid JSON in {path}"</span>) <span class="kw">from</span> e
+    <span class="kw">except</span> PermissionError:
+        log.error(<span class="str">"No read permission on %s"</span>, path)
+        <span class="kw">raise</span>
+    <span class="comment"># Do NOT add a bare `except Exception` — let unknown errors bubble.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">custom_exc.py — domain-specific hierarchy</span><pre><span class="comment"># Build a small hierarchy for your library's errors</span>
+<span class="kw">class</span> <span class="cls">PipelineError</span>(<span class="cls">Exception</span>):
+    <span class="str">"""Base for all errors raised by this pipeline."""</span>
+
+<span class="kw">class</span> <span class="cls">InputValidationError</span>(PipelineError):
+    <span class="str">"""User-supplied input is invalid."""</span>
+
+<span class="kw">class</span> <span class="cls">QCFailedError</span>(PipelineError):
+    <span class="str">"""Sample failed QC thresholds."""</span>
+    <span class="kw">def</span> <span class="func">__init__</span>(self, sample_id: str, n_kept: int, n_min: int):
+        self.sample_id = sample_id
+        self.n_kept    = n_kept
+        self.n_min     = n_min
+        <span class="func">super</span>().__init__(
+            <span class="str">f"Sample {sample_id} kept {n_kept} cells &lt; threshold {n_min}"</span>
+        )
+
+<span class="kw">class</span> <span class="cls">ExternalToolError</span>(PipelineError):
+    <span class="str">"""Wraps non-zero exit from samtools / bwa / etc."""</span>
+
+<span class="comment"># Users can catch either the umbrella or the specific subtype:</span>
+<span class="kw">try</span>:
+    run_pipeline()
+<span class="kw">except</span> QCFailedError <span class="kw">as</span> e:
+    log.warning(<span class="str">"QC failed for %s: kept %d / required %d"</span>, e.sample_id, e.n_kept, e.n_min)
+<span class="kw">except</span> PipelineError:
+    log.exception(<span class="str">"Pipeline failure"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">raise_from.py — preserve the cause</span><pre><span class="kw">def</span> <span class="func">parse_vcf</span>(path):
+    <span class="kw">try</span>:
+        <span class="kw">return</span> _low_level_parse(path)
+    <span class="kw">except</span> (UnicodeDecodeError, IndexError) <span class="kw">as</span> e:
+        <span class="comment"># Wrap into a domain error but KEEP the original traceback:</span>
+        <span class="kw">raise</span> <span class="cls">InputValidationError</span>(<span class="str">f"Cannot parse VCF {path}"</span>) <span class="kw">from</span> e
+
+<span class="comment"># Traceback now shows:</span>
+<span class="comment">#   IndexError: list index out of range</span>
+<span class="comment">#   The above exception was the direct cause of the following exception:</span>
+<span class="comment">#   InputValidationError: Cannot parse VCF /tmp/x.vcf</span>
+
+<span class="comment"># Use `raise X from None` to SUPPRESS the cause (rarely needed)</span>
+<span class="kw">def</span> <span class="func">safe_int</span>(s):
+    <span class="kw">try</span>:
+        <span class="kw">return</span> <span class="func">int</span>(s)
+    <span class="kw">except</span> <span class="cls">ValueError</span>:
+        <span class="kw">raise</span> <span class="cls">InputValidationError</span>(<span class="str">f"Not an int: {s!r}"</span>) <span class="kw">from</span> <span class="kw">None</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">exception_groups.py — Python 3.11+ ExceptionGroup</span><pre><span class="comment"># Collect failures from many parallel tasks WITHOUT losing any</span>
+<span class="kw">def</span> <span class="func">run_all</span>(samples):
+    errors = []
+    results = []
+    <span class="kw">for</span> s <span class="kw">in</span> samples:
+        <span class="kw">try</span>:
+            results.append(run_one(s))
+        <span class="kw">except</span> PipelineError <span class="kw">as</span> e:
+            errors.append(e)
+    <span class="kw">if</span> errors:
+        <span class="comment"># Python 3.11+ groups exceptions; clients catch via except*</span>
+        <span class="kw">raise</span> <span class="cls">ExceptionGroup</span>(<span class="str">"some samples failed"</span>, errors)
+    <span class="kw">return</span> results
+
+<span class="kw">try</span>:
+    run_all(samples)
+<span class="kw">except</span>* QCFailedError <span class="kw">as</span> eg:
+    <span class="kw">for</span> e <span class="kw">in</span> eg.exceptions:
+        log.warning(<span class="str">"QC fail: %s"</span>, e)
+<span class="kw">except</span>* ExternalToolError <span class="kw">as</span> eg:
+    log.error(<span class="str">"%d tool failures"</span>, <span class="func">len</span>(eg.exceptions))
+</pre></div>
+</div>
+
+<div class="callout danger"><span class="callout-icon">🚫</span><div>
+<span data-lang="zh"><strong>反模式：</strong><code>except: pass</code> 與 <code>except Exception: pass</code>。它們吞掉所有錯誤包含 <code>KeyboardInterrupt</code> / <code>SystemExit</code>，讓 pipeline 在錯誤狀態下「靜悄悄繼續跑」——這是 <em>silent corruption</em>。除非你明確要做 fallback，否則永遠加上 log 並 re-raise。</span>
+<span data-lang="en"><strong>Anti-pattern:</strong> <code>except: pass</code> and <code>except Exception: pass</code>. They swallow everything including <code>KeyboardInterrupt</code> / <code>SystemExit</code>, letting the pipeline silently continue in a broken state — <em>silent corruption</em>. Unless you have an explicit fallback, always log and re-raise.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: R conditions ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、R 的條件系統：tryCatch / withCallingHandlers" data-en="II. R conditions: tryCatch / withCallingHandlers">二、R 的條件系統：tryCatch / withCallingHandlers</h2>
+<div data-lang="zh">
+<p>R 的「條件 (condition)」比 Python exception 更廣，分三種：<code>error</code>、<code>warning</code>、<code>message</code>。兩個處理函式有關鍵差別：</p>
+<ul>
+<li><code>tryCatch</code>：<strong>unwind</strong> handler —— 條件發生時直接跳到 handler，<em>不再回到</em>原本的程式碼。</li>
+<li><code>withCallingHandlers</code>：<strong>calling</strong> handler —— 條件發生時呼叫 handler，<em>handler 結束後</em>原程式碼繼續執行 (除非 handler 用 <code>invokeRestart()</code> 跳走)。warning / message 通常用 calling，error 用 try。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p>R "conditions" are broader than Python exceptions, in three flavors: <code>error</code>, <code>warning</code>, <code>message</code>. Two handlers differ critically:</p>
+<ul>
+<li><code>tryCatch</code>: <strong>unwinding</strong> handler — on a condition, jump to the handler and <em>do not</em> return to the original code.</li>
+<li><code>withCallingHandlers</code>: <strong>calling</strong> handler — invoke the handler and then <em>resume</em> the original code (unless the handler jumps via <code>invokeRestart()</code>). Calling is typical for warnings/messages, unwinding for errors.</li>
+</ul>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">tryCatch.R</button>
+<button class="code-tab-btn">calling.R</button>
+<button class="code-tab-btn">custom_cond.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">tryCatch.R — unwind: jump out on error</span><pre>load_counts &lt;- <span class="kw">function</span>(path) {
+  <span class="func">tryCatch</span>({
+    df &lt;- readr::<span class="func">read_tsv</span>(path, show_col_types = <span class="kw">FALSE</span>)
+    <span class="kw">if</span> (<span class="func">nrow</span>(df) == <span class="num">0</span>) <span class="func">stop</span>(<span class="str">"empty file"</span>, call. = <span class="kw">FALSE</span>)
+    df
+  },
+  <span class="comment"># Order from most specific to most general</span>
+  fileNotFound = <span class="kw">function</span>(c) {
+    <span class="func">message</span>(<span class="str">"missing file: "</span>, path)
+    <span class="kw">NULL</span>
+  },
+  error = <span class="kw">function</span>(c) {
+    futile.logger::<span class="func">flog.error</span>(<span class="str">"Failed to load %s: %s"</span>, path, conditionMessage(c))
+    <span class="kw">NULL</span>
+  },
+  finally = {
+    futile.logger::<span class="func">flog.debug</span>(<span class="str">"load_counts done for %s"</span>, path)
+  })
+}
+</pre></div>
+<div class="code-tab-content"><span class="filename">calling.R — log warnings without aborting</span><pre><span class="comment"># Collect every warning into a list while letting the code keep running</span>
+run_with_warnings &lt;- <span class="kw">function</span>(samples) {
+  warns &lt;- <span class="func">list</span>()
+  results &lt;- <span class="func">withCallingHandlers</span>(
+    <span class="func">lapply</span>(samples, run_one),
+    warning = <span class="kw">function</span>(w) {
+      warns[[<span class="func">length</span>(warns) + <span class="num">1</span>]] &lt;&lt;- w
+      <span class="func">invokeRestart</span>(<span class="str">"muffleWarning"</span>)   <span class="comment"># suppress; keep running</span>
+    },
+    message = <span class="kw">function</span>(m) {
+      futile.logger::<span class="func">flog.info</span>(<span class="func">conditionMessage</span>(m))
+      <span class="func">invokeRestart</span>(<span class="str">"muffleMessage"</span>)
+    }
+  )
+  <span class="func">list</span>(results = results, warnings = warns)
+}
+</pre></div>
+<div class="code-tab-content"><span class="filename">custom_cond.R — typed conditions (recommended)</span><pre><span class="comment"># R also supports custom condition classes — use them like Python custom exceptions</span>
+qc_failed &lt;- <span class="kw">function</span>(sample_id, n_kept, n_min) {
+  <span class="func">structure</span>(
+    <span class="func">class</span> = <span class="func">c</span>(<span class="str">"qc_failed"</span>, <span class="str">"error"</span>, <span class="str">"condition"</span>),
+    <span class="func">list</span>(
+      message = <span class="func">sprintf</span>(<span class="str">"%s: kept %d &lt; min %d"</span>, sample_id, n_kept, n_min),
+      sample_id = sample_id, n_kept = n_kept, n_min = n_min
+    )
+  )
+}
+
+<span class="comment"># raise:</span>
+<span class="func">stop</span>(qc_failed(<span class="str">"SRR123"</span>, n_kept = <span class="num">50</span>, n_min = <span class="num">100</span>))
+
+<span class="comment"># catch the specific class:</span>
+<span class="func">tryCatch</span>(
+  run_pipeline(),
+  qc_failed = <span class="kw">function</span>(c) {
+    futile.logger::<span class="func">flog.warn</span>(<span class="str">"QC fail %s: %d/%d"</span>, c$sample_id, c$n_kept, c$n_min)
+  }
+)
+
+<span class="comment"># rlang::abort() is the modern alternative (typed errors out of the box):</span>
+<span class="comment"># rlang::abort(class = "qc_failed", message = "...", sample_id = sid)</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: Interactive — log level simulator ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="三、Log level 過濾模擬器" data-en="III. Log-level filter simulator">三、Log level 過濾模擬器</h2>
+<div data-lang="zh">
+<p>每筆 log 都有 level (DEBUG / INFO / WARNING / ERROR / CRITICAL)。logger 設定一個「門檻」，<strong>低於門檻的 log 會被過濾掉</strong>。production 通常用 INFO 或 WARNING，debug 階段才開 DEBUG。</p>
+</div>
+<div data-lang="en">
+<p>Every log has a level (DEBUG / INFO / WARNING / ERROR / CRITICAL). The logger has a threshold; <strong>logs below it are filtered out</strong>. Production typically uses INFO or WARNING; DEBUG is turned on only when actively debugging.</p>
+</div>
+
+<div class="interactive-panel">
+<h3 data-zh="調整門檻，看哪些 log 會通過" data-en="Adjust threshold to see which logs pass">調整門檻，看哪些 log 會通過</h3>
+<div class="slider-group" style="margin:.75rem 0">
+  <label data-lang="zh">Logger 門檻 (threshold):</label>
+  <label data-lang="en">Logger threshold:</label>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.4rem">
+    <button class="code-tab-btn lvl-btn" data-lvl="10">DEBUG</button>
+    <button class="code-tab-btn lvl-btn active" data-lvl="20">INFO</button>
+    <button class="code-tab-btn lvl-btn" data-lvl="30">WARN</button>
+    <button class="code-tab-btn lvl-btn" data-lvl="40">ERROR</button>
+    <button class="code-tab-btn lvl-btn" data-lvl="50">CRITICAL</button>
+  </div>
+</div>
+<div id="logStream" style="margin-top:1rem;font-family:'Fira Code',Consolas,monospace;font-size:.85rem;line-height:1.7;background:rgba(0,0,0,.04);padding:.75rem;border-radius:6px"></div>
+<div class="sim-stats" style="margin-top:.75rem">
+  <span class="sim-stat pass" id="logPass">— pass</span>
+  <span class="sim-stat fail" id="logBlock">— blocked</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 5: Python structured logging ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="四、Python 結構化日誌：logging / loguru" data-en="IV. Python structured logging: logging / loguru">四、Python 結構化日誌：logging / loguru</h2>
+<div data-lang="zh">
+<p>Python 內建 <code>logging</code> 強大但設定冗長；<code>loguru</code> 是社群最愛的封裝，一行就能輸出 JSON 並支援 rotation。生產環境兩者都用——<code>logging</code> 因為相容性，<code>loguru</code> 用於快速腳本。</p>
+</div>
+<div data-lang="en">
+<p>Python's stdlib <code>logging</code> is powerful but verbose; <code>loguru</code> is the community-favorite wrapper — JSON output and rotation in one line. Both are used in production: <code>logging</code> for ecosystem compat, <code>loguru</code> for scripts.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">stdlib_logging.py</button>
+<button class="code-tab-btn">loguru.py</button>
+<button class="code-tab-btn">json_log.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">stdlib_logging.py — production setup</span><pre><span class="kw">import</span> logging, sys
+<span class="kw">from</span> logging.handlers <span class="kw">import</span> RotatingFileHandler
+
+<span class="comment"># Configure ONCE at app entry point — never inside library code</span>
+<span class="kw">def</span> <span class="func">setup_logging</span>(level: str = <span class="str">"INFO"</span>, log_file: str = <span class="str">"pipeline.log"</span>):
+    fmt = logging.Formatter(
+        <span class="str">"%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"</span>,
+        datefmt=<span class="str">"%Y-%m-%dT%H:%M:%S"</span>
+    )
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+
+    <span class="comment"># Console: human-readable</span>
+    sh = logging.StreamHandler(sys.stderr)
+    sh.setFormatter(fmt); root.addHandler(sh)
+
+    <span class="comment"># File: rotating, 10 MB × 5 backups</span>
+    fh = RotatingFileHandler(log_file, maxBytes=<span class="num">10_000_000</span>, backupCount=<span class="num">5</span>)
+    fh.setFormatter(fmt); root.addHandler(fh)
+
+<span class="comment"># In each module:</span>
+log = logging.getLogger(__name__)        <span class="comment"># inherits root config</span>
+log.info(<span class="str">"loaded %d reads"</span>, n_reads)
+log.exception(<span class="str">"alignment failed"</span>)     <span class="comment"># auto-includes traceback</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">loguru.py — modern, batteries-included</span><pre><span class="kw">from</span> loguru <span class="kw">import</span> logger
+
+<span class="comment"># Remove default + configure in one line each</span>
+logger.remove()
+logger.add(sys.stderr, level=<span class="str">"INFO"</span>,
+           format=<span class="str">"&lt;green&gt;{time:HH:mm:ss}&lt;/green&gt; | &lt;level&gt;{level: &lt;8}&lt;/level&gt; | {extra[sample]} | {message}"</span>)
+logger.add(<span class="str">"pipeline.log"</span>, rotation=<span class="str">"100 MB"</span>, retention=<span class="str">"30 days"</span>,
+           level=<span class="str">"DEBUG"</span>, serialize=<span class="kw">True</span>)   <span class="comment"># serialize=True → JSON</span>
+
+<span class="comment"># Use .bind() to attach context fields that show in EVERY log</span>
+<span class="kw">def</span> <span class="func">process_sample</span>(sample_id):
+    sample_log = logger.bind(sample=sample_id)
+    sample_log.info(<span class="str">"start"</span>)
+    sample_log.info(<span class="str">"loaded {} reads"</span>, n_reads)
+    sample_log.error(<span class="str">"failed: {}"</span>, err)
+
+<span class="comment"># @logger.catch decorator auto-logs uncaught exceptions with full traceback</span>
+<span class="kw">@</span><span class="func">logger.catch</span>
+<span class="kw">def</span> <span class="func">run_pipeline</span>(samples):
+    ...
+</pre></div>
+<div class="code-tab-content"><span class="filename">json_log.py — machine-readable for cluster grep</span><pre><span class="kw">import</span> logging, json, sys
+
+<span class="kw">class</span> <span class="cls">JsonFormatter</span>(logging.Formatter):
+    <span class="kw">def</span> <span class="func">format</span>(self, record):
+        payload = {
+            <span class="str">"ts"</span>:     self.formatTime(record, <span class="str">"%Y-%m-%dT%H:%M:%S"</span>),
+            <span class="str">"level"</span>:  record.levelname,
+            <span class="str">"logger"</span>: record.name,
+            <span class="str">"msg"</span>:    record.getMessage(),
+        }
+        <span class="comment"># Pull custom context from record.__dict__ (set via extra=...)</span>
+        <span class="kw">for</span> k <span class="kw">in</span> (<span class="str">"sample_id"</span>, <span class="str">"step"</span>, <span class="str">"duration_s"</span>):
+            <span class="kw">if</span> k <span class="kw">in</span> record.__dict__:
+                payload[k] = record.__dict__[k]
+        <span class="kw">if</span> record.exc_info:
+            payload[<span class="str">"traceback"</span>] = self.formatException(record.exc_info)
+        <span class="kw">return</span> json.dumps(payload)
+
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(JsonFormatter())
+logging.getLogger().addHandler(handler)
+logging.getLogger().setLevel(<span class="str">"INFO"</span>)
+
+log = logging.getLogger(__name__)
+log.info(<span class="str">"loaded reads"</span>, extra={<span class="str">"sample_id"</span>: <span class="str">"SRR123"</span>, <span class="str">"step"</span>: <span class="str">"load"</span>})
+<span class="comment"># {"ts":"2026-05-15T12:30:00","level":"INFO","msg":"loaded reads","sample_id":"SRR123","step":"load"}</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: R logging ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="五、R 結構化日誌：logger / futile.logger / lgr" data-en="V. R structured logging: logger / futile.logger / lgr">五、R 結構化日誌：logger / futile.logger / lgr</h2>
+<div data-lang="zh">
+<p>R 有三個常見 logging 套件：<code>logger</code> (現代、輕量、與 base R 整合)、<code>futile.logger</code> (Bioconductor 套件常用)、<code>lgr</code> (功能最完整、最像 Python logging)。新專案建議 <code>logger</code> 或 <code>lgr</code>。</p>
+</div>
+<div data-lang="en">
+<p>Three common R logging packages: <code>logger</code> (modern, light, integrates with base R), <code>futile.logger</code> (popular in Bioconductor), <code>lgr</code> (most full-featured, closest to Python's logging). New projects: pick <code>logger</code> or <code>lgr</code>.</p>
+</div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="套件" data-en="Package">套件</th>
+<th data-zh="風格" data-en="Style">風格</th>
+<th data-zh="JSON 輸出" data-en="JSON output">JSON 輸出</th>
+<th data-zh="情境" data-en="Use case">情境</th>
+</tr></thead><tbody>
+<tr><td><code>logger</code></td><td data-zh="簡潔、glue 風格" data-en="Concise, glue-style">簡潔</td><td>✅ (formatter 設定)</td><td data-zh="新專案、Shiny" data-en="New projects, Shiny">新專案、Shiny</td></tr>
+<tr><td><code>futile.logger</code></td><td data-zh="printf 風格" data-en="printf-style">printf 風格</td><td data-zh="需自訂 layout" data-en="Custom layout">需自訂</td><td>Bioconductor</td></tr>
+<tr><td><code>lgr</code></td><td data-zh="R6、近 Python logging" data-en="R6, like Python logging">R6 物件</td><td data-zh="✅ 原生" data-en="✅ Native">✅ 原生</td><td data-zh="production、複雜階層" data-en="Production, complex hierarchies">production</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">logger.R</button>
+<button class="code-tab-btn">futile.R</button>
+<button class="code-tab-btn">lgr.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">logger.R — modern glue-style</span><pre><span class="kw">library</span>(logger)
+
+<span class="comment"># Set threshold + appenders at entry point</span>
+log_threshold(INFO)
+log_appender(<span class="func">appender_tee</span>(<span class="str">"pipeline.log"</span>))     <span class="comment"># console + file</span>
+log_layout(<span class="func">layout_json</span>())                       <span class="comment"># structured JSON</span>
+
+<span class="comment"># glue-style interpolation: {var} interpolated lazily (skipped if filtered)</span>
+n_reads &lt;- <span class="num">1234567</span>
+sample_id &lt;- <span class="str">"SRR123"</span>
+log_info(<span class="str">"loaded {n_reads} reads from {sample_id}"</span>)
+log_warn(<span class="str">"high duplication rate: {round(dup_pct, 1)}%"</span>)
+log_error(<span class="str">"alignment failed for {sample_id}"</span>)
+
+<span class="comment"># Attach context fields to every log in a scope:</span>
+local_log_levels &lt;- log_threshold(DEBUG, namespace = <span class="str">"my_pkg"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">futile.R — Bioconductor convention</span><pre><span class="kw">library</span>(futile.logger)
+
+<span class="func">flog.threshold</span>(INFO)
+<span class="func">flog.appender</span>(<span class="func">appender.tee</span>(<span class="str">"pipeline.log"</span>))
+<span class="func">flog.layout</span>(<span class="func">layout.format</span>(<span class="str">"~t | ~l | ~n | ~m"</span>))
+
+<span class="comment"># Per-namespace threshold (e.g. quiet a chatty dependency)</span>
+<span class="func">flog.threshold</span>(WARN, name = <span class="str">"my_pkg.io"</span>)
+
+<span class="func">flog.info</span>(<span class="str">"loaded %d reads from %s"</span>, n_reads, sample_id)
+<span class="func">flog.warn</span>(<span class="str">"duplication rate %.1f%% &gt; threshold"</span>, dup_pct)
+
+<span class="comment"># Capture R warning() into futile logger:</span>
+<span class="func">withCallingHandlers</span>(
+  run_pipeline(),
+  warning = <span class="kw">function</span>(w) {
+    <span class="func">flog.warn</span>(<span class="str">"R warning: %s"</span>, <span class="func">conditionMessage</span>(w))
+    <span class="func">invokeRestart</span>(<span class="str">"muffleWarning"</span>)
+  }
+)
+</pre></div>
+<div class="code-tab-content"><span class="filename">lgr.R — closest to Python logging</span><pre><span class="kw">library</span>(lgr)
+
+<span class="comment"># lgr uses R6, with hierarchies of named loggers</span>
+lg &lt;- <span class="func">get_logger</span>(<span class="str">"my_pkg"</span>)
+lg$set_threshold(<span class="str">"info"</span>)
+
+<span class="comment"># Add multiple appenders</span>
+lg$add_appender(<span class="func">AppenderConsole</span>$new(threshold = <span class="str">"info"</span>),    name = <span class="str">"console"</span>)
+lg$add_appender(<span class="func">AppenderJson</span>$new(file = <span class="str">"pipeline.jsonl"</span>),  name = <span class="str">"json"</span>)
+
+<span class="comment"># Add structured fields via custom_fields (think Python's extra=)</span>
+lg$info(<span class="str">"loaded reads"</span>,
+        custom_fields = <span class="func">list</span>(sample = sample_id, n = n_reads))
+
+<span class="comment"># Children inherit parent settings:</span>
+align_log &lt;- <span class="func">get_logger</span>(<span class="str">"my_pkg/align"</span>)   <span class="comment"># child logger</span>
+align_log$warn(<span class="str">"low mapping rate"</span>)
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 7: workflow integration + sentry ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 5" data-en="TOPIC 5">主題 5</div>
+<h2 data-zh="六、Workflow Engine 整合 + Sentry" data-en="VI. Workflow integration + Sentry">六、Workflow Engine 整合 + Sentry</h2>
+<div data-lang="zh">
+<p>Snakemake 與 Nextflow 都會把 rule / process 的 stdout + stderr 自動收進 log 檔。要讓你的 Python / R log 真的進得去，必須輸出到 <strong>stderr</strong>（或工作流引擎指定的檔案），<em>絕對不要</em> 用 <code>print()</code> 到 stdout——那會污染 piped output。</p>
+<p><strong>Sentry</strong> 是雲端 error tracking 服務：未捕捉的例外會自動回報 (含 traceback、環境變數、最近 logs)，多次相同 error 自動 deduplication。即使是學術研究，當你的工具被許多人使用後，Sentry 比 GitHub Issues 更早讓你發現問題。</p>
+</div>
+<div data-lang="en">
+<p>Snakemake and Nextflow automatically capture each rule/process's stdout + stderr into log files. For your Python/R logs to land there, route to <strong>stderr</strong> (or the engine-specified log file). <em>Never</em> <code>print()</code> to stdout — that pollutes piped output.</p>
+<p><strong>Sentry</strong> is a cloud error-tracking service: uncaught exceptions are auto-reported (with traceback, env vars, recent logs), and identical errors are auto-deduplicated. Even for academic tools, once others use your code, Sentry surfaces issues faster than GitHub Issues.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">snakemake.py</button>
+<button class="code-tab-btn">nextflow.nf</button>
+<button class="code-tab-btn">sentry.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">snakemake.py — log per rule</span><pre><span class="comment"># Snakefile</span>
+rule align:
+    input:  <span class="str">"data/{sample}.fq.gz"</span>
+    output: <span class="str">"out/{sample}.bam"</span>
+    log:    <span class="str">"logs/align/{sample}.log"</span>           <span class="comment"># &lt;-- Snakemake redirects here</span>
+    shell:  <span class="str">"""
+        bwa mem -t {threads} ref.fa {input} 2&gt; {log} | \\
+        samtools sort -@ {threads} -o {output} - 2&gt;&gt; {log}
+    """</span>
+
+<span class="comment"># In a `run:` block (Python), configure logging to write to log[0]:</span>
+rule call_variants:
+    input:  <span class="str">"out/{sample}.bam"</span>
+    output: <span class="str">"out/{sample}.vcf"</span>
+    log:    <span class="str">"logs/call/{sample}.log"</span>
+    run:
+        <span class="kw">import</span> logging
+        logging.basicConfig(filename=log[<span class="num">0</span>], level=<span class="str">"INFO"</span>,
+            format=<span class="str">"%(asctime)s | %(levelname)s | %(message)s"</span>)
+        logging.info(<span class="str">f"calling variants for {wildcards.sample}"</span>)
+        call_variants(input[<span class="num">0</span>], output[<span class="num">0</span>])
+</pre></div>
+<div class="code-tab-content"><span class="filename">nextflow.nf — capture stderr per process</span><pre>process ALIGN {
+    tag <span class="str">"$sample_id"</span>
+    publishDir <span class="str">"logs/align"</span>, pattern: <span class="str">"*.log"</span>, mode: <span class="str">'copy'</span>
+
+    input:  tuple <span class="kw">val</span>(sample_id), path(fastq)
+    output:
+        tuple <span class="kw">val</span>(sample_id), path(<span class="str">"${sample_id}.bam"</span>)
+        path <span class="str">"${sample_id}.log"</span>, emit: log
+
+    script:
+    <span class="str">"""
+    bwa mem -t ${task.cpus} ref.fa ${fastq} 2> ${sample_id}.log \\
+        | samtools sort -@ ${task.cpus} -o ${sample_id}.bam - 2>> ${sample_id}.log
+    """</span>
+}
+
+<span class="comment">// Nextflow also auto-writes .command.log + .command.err per task work dir</span>
+<span class="comment">// nextflow.config: enable trace + timeline for cluster-wide aggregated logs</span>
+trace { enabled = <span class="kw">true</span>; file = <span class="str">"trace.tsv"</span> }
+timeline { enabled = <span class="kw">true</span>; file = <span class="str">"timeline.html"</span> }
+</pre></div>
+<div class="code-tab-content"><span class="filename">sentry.py — auto-report uncaught exceptions</span><pre><span class="kw">import</span> sentry_sdk
+<span class="kw">from</span> sentry_sdk.integrations.logging <span class="kw">import</span> LoggingIntegration
+
+<span class="comment"># Init once at entry point</span>
+sentry_sdk.init(
+    dsn=os.environ[<span class="str">"SENTRY_DSN"</span>],
+    environment=<span class="str">"prod"</span>,
+    release=<span class="str">"my_pipeline@1.4.2"</span>,
+    traces_sample_rate=<span class="num">0.1</span>,                  <span class="comment"># 10% perf traces</span>
+    integrations=[LoggingIntegration(level=<span class="str">"INFO"</span>, event_level=<span class="str">"ERROR"</span>)],
+)
+
+<span class="comment"># Attach context that goes with every report</span>
+sentry_sdk.set_tag(<span class="str">"pipeline"</span>, <span class="str">"rnaseq"</span>)
+sentry_sdk.set_user({<span class="str">"id"</span>: os.environ.get(<span class="str">"SLURM_JOB_ID"</span>)})
+
+<span class="kw">with</span> sentry_sdk.start_transaction(name=<span class="str">"process_sample"</span>):
+    <span class="kw">with</span> sentry_sdk.start_span(op=<span class="str">"align"</span>):
+        align(fq, bam)
+
+<span class="comment"># Any uncaught exception below will be reported to Sentry with full context</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 8: Decision tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個工具？" data-en="Which tool do I need?">該用哪個工具？</h2>
+
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我想記錄『發生了什麼』給未來的我」</strong> → <code>logging.info()</code> / <code>log_info()</code>，<em>不</em>是 <code>print()</code></span><span data-lang="en"><strong>"Record what happened for future-me"</strong> → <code>logging.info()</code> / <code>log_info()</code>, <em>not</em> <code>print()</code></span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要在 catch 後重新拋出但保留原因」</strong> → Python: <code>raise NewError(...) from e</code>; R: <code>rlang::abort(... , parent = e)</code></span><span data-lang="en"><strong>"Catch and re-throw while preserving cause"</strong> → Py: <code>raise NewError(...) from e</code>; R: <code>rlang::abort(..., parent = e)</code></span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要對特定錯誤分類處理 (QC fail / IO fail)」</strong> → 自訂例外 class 階層 (Python) / 自訂 condition class (R)</span><span data-lang="en"><strong>"Distinguish error types (QC fail / IO fail)"</strong> → custom exception hierarchy (Py) / custom condition class (R)</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要把 warning 收集起來但讓程式繼續跑」</strong> → R 的 <code>withCallingHandlers</code> + <code>invokeRestart("muffleWarning")</code></span><span data-lang="en"><strong>"Collect warnings but keep running"</strong> → R's <code>withCallingHandlers</code> + <code>invokeRestart("muffleWarning")</code></span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要在 cluster log file 中按 sample 篩出錯誤」</strong> → 結構化 JSON log + <code>jq</code> 過濾</span><span data-lang="en"><strong>"grep cluster logs by sample"</strong> → structured JSON logs + <code>jq</code> filtering</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我的工具被 100+ 使用者用，要自動聚合 error」</strong> → Sentry (或 Rollbar / Honeybadger)</span><span data-lang="en"><strong>"My tool is used by 100+, auto-aggregate errors"</strong> → Sentry (or Rollbar / Honeybadger)</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q1.</strong> Logger 門檻設為 WARNING。下列哪些 log 會被輸出？(多選思考)</p>
+<p data-lang="en"><strong>Q1.</strong> Logger threshold = WARNING. Which logs are emitted? (think multi)</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. DEBUG + INFO + WARNING + ERROR + CRITICAL 全部</span><span data-lang="en">A. DEBUG + INFO + WARNING + ERROR + CRITICAL — all of them</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 只有 WARNING + ERROR + CRITICAL (≥ threshold 才通過)</span><span data-lang="en">B. Only WARNING + ERROR + CRITICAL (≥ threshold passes)</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 只有 WARNING (剛好等於門檻)</span><span data-lang="en">C. Only WARNING (exactly matching the threshold)</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 只有 DEBUG + INFO (小於門檻才輸出)</span><span data-lang="en">D. Only DEBUG + INFO (below-threshold are emitted)</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>log level 門檻是 <em>下限</em>——大於等於門檻的 log 通過。WARNING 門檻會放行 WARN / ERROR / CRITICAL，過濾 DEBUG / INFO。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> The threshold is a <em>floor</em> — logs at or above the threshold pass. A WARNING threshold lets WARN/ERROR/CRITICAL through and filters DEBUG/INFO.</div>
+</div>
+
+<div class="quiz-q" data-correct="D">
+<p data-lang="zh"><strong>Q2.</strong> 下列哪個是 <strong>反模式 (anti-pattern)</strong>？</p>
+<p data-lang="en"><strong>Q2.</strong> Which is an <strong>anti-pattern</strong>?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. <code>except FileNotFoundError: log.error(...); raise</code></span><span data-lang="en">A. <code>except FileNotFoundError: log.error(...); raise</code></span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. <code>raise InputError(...) from original_e</code></span><span data-lang="en">B. <code>raise InputError(...) from original_e</code></span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 在 entry point 一次性 <code>logging.basicConfig()</code></span><span data-lang="en">C. Calling <code>logging.basicConfig()</code> once at entry point</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. <code>try: run() except Exception: pass</code></span><span data-lang="en">D. <code>try: run() except Exception: pass</code></span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 D。</strong>「裸 except + pass」靜默吞掉所有錯誤，包含 <code>KeyboardInterrupt</code>，導致 pipeline 在錯誤狀態下繼續執行 (silent corruption)。A/B/C 都是正確做法。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: D.</strong> "Bare except + pass" silently swallows everything (even <code>KeyboardInterrupt</code>), letting the pipeline continue in a broken state (silent corruption). A/B/C are all correct practices.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> R 中要「收集所有 warning 但讓程式繼續執行」，應該使用？</p>
+<p data-lang="en"><strong>Q3.</strong> In R, to "collect all warnings but keep running," use?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. <code>withCallingHandlers</code> + <code>invokeRestart("muffleWarning")</code></span><span data-lang="en">A. <code>withCallingHandlers</code> + <code>invokeRestart("muffleWarning")</code></span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. <code>tryCatch(warning = function(w) ...)</code></span><span data-lang="en">B. <code>tryCatch(warning = function(w) ...)</code></span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. <code>suppressWarnings()</code></span><span data-lang="en">C. <code>suppressWarnings()</code></span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. <code>options(warn = -1)</code></span><span data-lang="en">D. <code>options(warn = -1)</code></span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong><code>withCallingHandlers</code> 是 calling handler——handler 結束後原程式碼會繼續。<code>tryCatch</code> 是 unwind handler，遇 warning 後就跳出整段 code。<code>suppressWarnings</code> / <code>options(warn=-1)</code> 是把 warning 丟掉，不是收集。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> <code>withCallingHandlers</code> uses a calling handler — original code resumes after the handler. <code>tryCatch</code> is unwinding (jumps out on warning). <code>suppressWarnings</code> / <code>options(warn=-1)</code> discard warnings rather than collect them.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="functional-programming.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="A3 · 函數式程式設計" data-en="A3 · Functional Programming">A3 · 函數式程式設計</span></a>
+<a href="profiling-optimization.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="A5 · 效能剖析與最佳化" data-en="A5 · Profiling & Optimization">A5 · 效能剖析與最佳化</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · A4 錯誤處理與結構化日誌</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Interactive: log-level filter simulator
+const logMessages = [
+  { lvl: 10, name: "DEBUG",    text: "DEBUG    | parser   | parsing chunk 4/120 of variants.vcf" },
+  { lvl: 10, name: "DEBUG",    text: "DEBUG    | align    | bwa returned 0, stderr: 0 warnings" },
+  { lvl: 20, name: "INFO",     text: "INFO     | qc       | sample SRR123: kept 4321/5000 cells (86.4%)" },
+  { lvl: 20, name: "INFO",     text: "INFO     | align    | mapped 12.3M / 12.8M reads (96.1%) for SRR456" },
+  { lvl: 30, name: "WARNING",  text: "WARNING  | qc       | sample SRR789 duplication rate 42% > 30% threshold" },
+  { lvl: 30, name: "WARNING",  text: "WARNING  | annotate | 17 variants without rsID, using chr:pos as key" },
+  { lvl: 40, name: "ERROR",    text: "ERROR    | align    | sample SRR101: bwa exited with code 1" },
+  { lvl: 40, name: "ERROR",    text: "ERROR    | io       | cannot read /scratch/SRR202.fq.gz: No such file" },
+  { lvl: 50, name: "CRITICAL", text: "CRITICAL | runner   | OOMKilled at step call_variants, sample SRR333" },
+];
+const levelColors = {
+  10: "rgba(120,120,120,.55)",
+  20: "var(--text, #333)",
+  30: "#c08000",
+  40: "#c0392b",
+  50: "#8e0d28",
+};
+function renderLogStream(threshold){
+  const box = document.getElementById('logStream');
+  let passN = 0, blockN = 0;
+  box.innerHTML = logMessages.map(m => {
+    const pass = m.lvl >= threshold;
+    if (pass) passN++; else blockN++;
+    const op = pass ? '1' : '.22';
+    const td = pass ? 'none' : 'line-through';
+    const color = pass ? levelColors[m.lvl] : 'currentColor';
+    return `<div style="opacity:${op};text-decoration:${td};color:${color}">${m.text}</div>`;
+  }).join('');
+  document.getElementById('logPass').textContent  = passN + ' pass';
+  document.getElementById('logBlock').textContent = blockN + ' blocked';
+}
+document.querySelectorAll('.lvl-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.lvl-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderLogStream(+btn.dataset.lvl);
+  });
+});
+renderLogStream(20);
+</script>
+</body></html>

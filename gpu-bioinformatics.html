@@ -1,0 +1,515 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>B4: GPU 加速生醫運算 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK B · TOPIC 8 / 20</div>
+<h1 data-zh="GPU 加速生醫運算：何時值得搬到 GPU 上" data-en="GPU-Accelerated Bioinformatics: When It's Worth the Move">GPU 加速生醫運算：何時值得搬到 GPU 上</h1>
+<p class="subtitle" data-lang="zh">CuPy、RAPIDS cuDF/cuML、rapids-singlecell、JAX、PyTorch——把 100 萬細胞 scRNA-seq 從 2 小時壓到 5 分鐘，但要先理解資料搬運與記憶體配額。</p>
+<p class="subtitle" data-lang="en">CuPy, RAPIDS cuDF/cuML, rapids-singlecell, JAX, PyTorch — compress a 1M-cell scRNA-seq from 2 hours to 5 minutes, but only after understanding host↔device transfer and memory budgets.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: When GPU helps ===== -->
+<section class="section">
+<div class="section-label" data-zh="原則" data-en="WHEN">原則</div>
+<h2 data-zh="GPU 何時真的幫得上忙？" data-en="When Does the GPU Actually Help?">GPU 何時真的幫得上忙？</h2>
+<div data-lang="zh">
+<p>GPU 不是萬靈丹。一張 A100 有 6912 個 CUDA core，但每個 core 比 CPU core 慢很多——<strong>GPU 贏在大規模、相同操作、資料密集；輸在分支、隨機存取、小資料</strong>。最常見適合 GPU 的生醫工作：</p>
+<ul>
+<li><strong>大批次線性代數：</strong>scRNA-seq PCA、UMAP、neighbor graph（cuML 比 sklearn 快 10–50×）。</li>
+<li><strong>深度學習：</strong>AlphaFold、ESM、scVI、Geneformer——本來就是給 GPU 設計的。</li>
+<li><strong>影像處理：</strong>病理切片、cryo-EM 重建、顯微影像分割。</li>
+<li><strong>序列比對：</strong>NVIDIA Parabricks (GATK on GPU)、CUDA-Smith-Waterman；short-read mapping 用 GPU 加速 4–10×。</li>
+</ul>
+<p><strong>不適合 GPU：</strong>VCF 解析、merge sort、Snakemake 排程——這些是 I/O 或分支密集，搬到 GPU 反而更慢。</p>
+</div>
+<div data-lang="en">
+<p>GPU is not a silver bullet. An A100 has 6912 CUDA cores, but each is much slower than a CPU core — <strong>GPUs win at large, uniform, data-parallel ops; lose at branching, random access, small data</strong>. Typical bioinformatics wins:</p>
+<ul>
+<li><strong>Large-batch linear algebra:</strong> scRNA-seq PCA, UMAP, neighbor graphs (cuML is 10–50× faster than sklearn).</li>
+<li><strong>Deep learning:</strong> AlphaFold, ESM, scVI, Geneformer — built for GPUs.</li>
+<li><strong>Imaging:</strong> H&E slides, cryo-EM reconstruction, microscopy segmentation.</li>
+<li><strong>Sequence alignment:</strong> NVIDIA Parabricks (GATK on GPU), CUDA-Smith-Waterman; short-read mapping accelerated 4–10×.</li>
+</ul>
+<p><strong>NOT for GPU:</strong> VCF parsing, merge-sort, Snakemake scheduling — these are I/O- or branch-heavy and slow down on a GPU.</p>
+</div>
+</section>
+
+<!-- ===== Section 2: CuPy / RAPIDS ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、CuPy 與 RAPIDS：drop-in 替代" data-en="I. CuPy & RAPIDS: Drop-In Replacements">一、CuPy 與 RAPIDS：drop-in 替代</h2>
+<div data-lang="zh"><p>NVIDIA + open-source 的 RAPIDS 生態系想做一件事：<strong>讓 NumPy / pandas / scikit-learn / NetworkX 的程式幾乎不用改就能跑在 GPU 上</strong>。</p></div>
+<div data-lang="en"><p>The NVIDIA + open-source RAPIDS stack has one mission: <strong>let NumPy / pandas / sklearn / NetworkX code run on GPU with almost zero changes</strong>.</p></div>
+
+<table class="comp-table"><thead><tr>
+<th>RAPIDS / GPU</th>
+<th data-zh="對應 CPU 套件" data-en="CPU counterpart">對應 CPU 套件</th>
+<th data-zh="典型加速 (A100 vs 16 核 CPU)" data-en="Typical speedup (A100 vs 16C)">典型加速</th>
+<th data-zh="生醫適用" data-en="Bio use">生醫適用</th>
+</tr></thead><tbody>
+<tr><td><code>cupy</code></td><td>numpy</td><td>10–100×</td><td data-zh="任何矩陣計算" data-en="Any matrix math">任何矩陣計算</td></tr>
+<tr><td><code>cudf</code></td><td>pandas</td><td>10–50×</td><td data-zh="VCF/BED 大表 group-by" data-en="VCF/BED group-by on big tables">VCF/BED 大表</td></tr>
+<tr><td><code>cuml</code></td><td>scikit-learn</td><td>10–50×</td><td data-zh="PCA, UMAP, t-SNE, kNN" data-en="PCA, UMAP, t-SNE, kNN">降維與聚類</td></tr>
+<tr><td><code>cugraph</code></td><td>networkx</td><td>50–500×</td><td data-zh="cell-cell graph、PPI" data-en="Cell-cell graph, PPI">graph 演算法</td></tr>
+<tr><td><code>rapids-singlecell</code></td><td>scanpy</td><td>20–100×</td><td data-zh="百萬細胞 scRNA-seq" data-en="Million-cell scRNA-seq">百萬細胞</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">cupy.py</button>
+<button class="code-tab-btn">cudf.py</button>
+<button class="code-tab-btn">cuml.py</button>
+<button class="code-tab-btn">rapids_sc.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">cupy.py — numpy on GPU</span><pre><span class="kw">import</span> cupy <span class="kw">as</span> cp
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="comment"># CPU NumPy → GPU CuPy: change one import</span>
+X_cpu = np.random.randn(<span class="num">100_000</span>, <span class="num">2000</span>).astype(np.float32)   <span class="comment"># 800 MB</span>
+X_gpu = cp.asarray(X_cpu)                                          <span class="comment"># transfer to device</span>
+
+<span class="comment"># Same API as NumPy</span>
+mean   = X_gpu.mean(axis=<span class="num">0</span>)
+cov    = (X_gpu - mean).T @ (X_gpu - mean) / (X_gpu.shape[<span class="num">0</span>] - <span class="num">1</span>)
+eigvals, eigvecs = cp.linalg.eigh(cov)
+
+<span class="comment"># Bring back to CPU only when needed (e.g. for plotting)</span>
+loadings = cp.asnumpy(eigvecs[:, -<span class="num">10</span>:])
+</pre></div>
+<div class="code-tab-content"><span class="filename">cudf.py — pandas on GPU</span><pre><span class="kw">import</span> cudf
+
+<span class="comment"># Same as pandas, but on GPU</span>
+vcf = cudf.read_csv(<span class="str">"all_variants.tsv"</span>, sep=<span class="str">"\t"</span>, dtype={
+    <span class="str">"chrom"</span>: <span class="str">"str"</span>, <span class="str">"pos"</span>: <span class="str">"int64"</span>,
+    <span class="str">"qual"</span>: <span class="str">"float32"</span>, <span class="str">"DP"</span>: <span class="str">"int32"</span>,
+})
+
+high_q  = vcf[vcf.qual &gt; <span class="num">30</span>]
+by_chrom = high_q.groupby(<span class="str">"chrom"</span>).agg({<span class="str">"DP"</span>: [<span class="str">"mean"</span>, <span class="str">"count"</span>]})
+
+<span class="comment"># Convert back when you need to leave the GPU</span>
+df_pandas = by_chrom.to_pandas()
+</pre></div>
+<div class="code-tab-content"><span class="filename">cuml.py — sklearn on GPU</span><pre><span class="kw">from</span> cuml.decomposition <span class="kw">import</span> PCA
+<span class="kw">from</span> cuml.manifold     <span class="kw">import</span> UMAP
+<span class="kw">from</span> cuml.cluster      <span class="kw">import</span> KMeans
+
+X = cp.asarray(expression_matrix)   <span class="comment"># (1M cells, 2K genes)</span>
+
+pca   = PCA(n_components=<span class="num">50</span>).fit_transform(X)
+umap  = UMAP(n_neighbors=<span class="num">30</span>, min_dist=<span class="num">0.3</span>).fit_transform(pca)
+clust = KMeans(n_clusters=<span class="num">20</span>).fit_predict(pca)
+
+<span class="comment"># 1M cells, A100:</span>
+<span class="comment">#   sklearn PCA + UMAP on CPU: ~95 minutes</span>
+<span class="comment">#   cuml on A100:              ~2.5 minutes  (~38×)</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">rapids_sc.py — scanpy on GPU</span><pre><span class="kw">import</span> rapids_singlecell <span class="kw">as</span> rsc
+<span class="kw">import</span> scanpy <span class="kw">as</span> sc
+
+adata = sc.read_h5ad(<span class="str">"million_cell.h5ad"</span>)
+
+<span class="comment"># Move data to GPU (sparse → sparse on GPU)</span>
+rsc.utils.anndata_to_GPU(adata)
+
+<span class="comment"># Same Scanpy-style API</span>
+rsc.pp.normalize_total(adata)
+rsc.pp.log1p(adata)
+rsc.pp.highly_variable_genes(adata, n_top_genes=<span class="num">3000</span>)
+rsc.pp.pca(adata, n_comps=<span class="num">50</span>)
+rsc.pp.neighbors(adata, n_neighbors=<span class="num">15</span>)
+rsc.tl.leiden(adata, resolution=<span class="num">0.8</span>)
+rsc.tl.umap(adata)
+
+rsc.utils.anndata_to_CPU(adata)     <span class="comment"># back for plotting / saving</span>
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>Host↔Device 搬運是隱性 bottleneck：</strong>PCIe 5.0 約 64 GB/s，相比 A100 內部 2 TB/s 慢 30 倍。盡量「進 GPU 一次、做完所有事再出來」。每次 <code>cp.asnumpy()</code> 都是一次同步障壁，會讓 GPU 等到資料拷出去。</span>
+<span data-lang="en"><strong>Host↔Device transfer is a hidden bottleneck:</strong> PCIe 5.0 is ~64 GB/s vs A100's internal 2 TB/s — 30× slower. Move to GPU once, do everything, then move back. Each <code>cp.asnumpy()</code> is a sync barrier; the GPU waits until the copy finishes.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: JAX & PyTorch ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、JAX 與 PyTorch：autodiff + GPU" data-en="II. JAX & PyTorch: Autodiff + GPU">二、JAX 與 PyTorch：autodiff + GPU</h2>
+<div data-lang="zh"><p>當你需要可微分計算（VI、deep learning、bayesian inference），JAX 與 PyTorch 提供：(1) NumPy-like API，(2) 自動微分，(3) JIT 編譯到 GPU/TPU，(4) 多 GPU/多機器（<code>jax.pmap</code> / PyTorch DDP）。</p></div>
+<div data-lang="en"><p>When you need differentiable computation (variational inference, deep learning, Bayesian models), JAX and PyTorch give you: (1) NumPy-like API, (2) automatic differentiation, (3) JIT to GPU/TPU, (4) multi-GPU/multi-node (<code>jax.pmap</code> / PyTorch DDP).</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">jax.py</button>
+<button class="code-tab-btn">torch.py</button>
+<button class="code-tab-btn">memory.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">jax.py — jit + grad + pmap</span><pre><span class="kw">import</span> jax, jax.numpy <span class="kw">as</span> jnp
+<span class="kw">from</span> jax <span class="kw">import</span> jit, grad, vmap, pmap
+
+<span class="kw">def</span> <span class="func">neg_log_lik</span>(params, X, y):
+    mu = X @ params[<span class="str">"w"</span>] + params[<span class="str">"b"</span>]
+    <span class="kw">return</span> jnp.mean((mu - y) ** <span class="num">2</span>)
+
+<span class="comment"># jit-compile the gradient — runs entirely on GPU</span>
+grad_fn = jit(grad(neg_log_lik))
+
+<span class="kw">for</span> step <span class="kw">in</span> <span class="func">range</span>(<span class="num">1000</span>):
+    g = grad_fn(params, X, y)
+    params = jax.tree.map(<span class="kw">lambda</span> p, gp: p - <span class="num">1e-3</span> * gp, params, g)
+
+<span class="comment"># vmap: vectorize over a new axis (e.g. multiple chromosomes)</span>
+batched = vmap(neg_log_lik, in_axes=(<span class="kw">None</span>, <span class="num">0</span>, <span class="num">0</span>))
+
+<span class="comment"># pmap: replicate across multiple GPUs (data parallel)</span>
+multi_gpu = pmap(grad_fn)
+</pre></div>
+<div class="code-tab-content"><span class="filename">torch.py — typical training loop</span><pre><span class="kw">import</span> torch
+<span class="kw">import</span> torch.nn <span class="kw">as</span> nn
+
+device = torch.device(<span class="str">"cuda"</span> <span class="kw">if</span> torch.cuda.is_available() <span class="kw">else</span> <span class="str">"cpu"</span>)
+
+<span class="comment"># scVI-style VAE on counts</span>
+<span class="kw">class</span> <span class="cls">CountVAE</span>(nn.Module):
+    <span class="kw">def</span> <span class="func">__init__</span>(self, n_genes, latent=<span class="num">10</span>):
+        <span class="kw">super</span>().__init__()
+        self.enc = nn.Sequential(nn.Linear(n_genes, <span class="num">128</span>), nn.ReLU(),
+                                  nn.Linear(<span class="num">128</span>, latent * <span class="num">2</span>))
+        self.dec = nn.Sequential(nn.Linear(latent, <span class="num">128</span>), nn.ReLU(),
+                                  nn.Linear(<span class="num">128</span>, n_genes))
+    <span class="kw">def</span> <span class="func">forward</span>(self, x):
+        h = self.enc(x); mu, log_var = h.chunk(<span class="num">2</span>, dim=-<span class="num">1</span>)
+        z = mu + torch.randn_like(mu) * (log_var * <span class="num">0.5</span>).exp()
+        <span class="kw">return</span> self.dec(z), mu, log_var
+
+model = CountVAE(n_genes=<span class="num">2000</span>).to(device)
+opt   = torch.optim.Adam(model.parameters(), lr=<span class="num">1e-3</span>)
+<span class="kw">for</span> batch <span class="kw">in</span> loader:
+    x = batch.to(device, non_blocking=<span class="kw">True</span>)
+    recon, mu, lv = model(x)
+    loss = ((recon - x) ** <span class="num">2</span>).mean() - <span class="num">0.5</span> * (<span class="num">1</span> + lv - mu**<span class="num">2</span> - lv.exp()).mean()
+    opt.zero_grad(); loss.backward(); opt.step()
+</pre></div>
+<div class="code-tab-content"><span class="filename">memory.py — managing GPU RAM</span><pre><span class="kw">import</span> torch, gc
+
+<span class="kw">def</span> <span class="func">gpu_used_mb</span>():
+    <span class="kw">return</span> torch.cuda.memory_allocated() / <span class="num">1e6</span>
+
+<span class="comment"># Common OOM remedies:</span>
+<span class="comment"># 1. Smaller batch + gradient accumulation</span>
+<span class="kw">for</span> step, batch <span class="kw">in</span> <span class="func">enumerate</span>(loader):
+    loss = model(batch) / accum_steps
+    loss.backward()
+    <span class="kw">if</span> (step + <span class="num">1</span>) % accum_steps == <span class="num">0</span>:
+        opt.step(); opt.zero_grad()
+
+<span class="comment"># 2. Mixed precision (fp16) halves activations</span>
+scaler = torch.amp.GradScaler(<span class="str">"cuda"</span>)
+<span class="kw">with</span> torch.amp.autocast(<span class="str">"cuda"</span>, dtype=torch.float16):
+    loss = model(batch)
+scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
+
+<span class="comment"># 3. Clear caches between phases</span>
+<span class="kw">del</span> intermediate_tensor
+gc.collect()
+torch.cuda.empty_cache()                    <span class="comment"># PyTorch</span>
+<span class="comment"># CuPy: cp.get_default_memory_pool().free_all_blocks()</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: GPU landscape ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、GPU 生態與硬體選擇" data-en="III. GPU Ecosystem & Hardware Picks">三、GPU 生態與硬體選擇</h2>
+
+<table class="comp-table"><thead><tr>
+<th>GPU</th>
+<th>VRAM</th>
+<th>FP32 (TFLOPS)</th>
+<th>BF16 (TFLOPS)</th>
+<th data-zh="2025 雲端時薪 (USD)" data-en="2025 cloud / hr (USD)">雲端時薪</th>
+<th data-zh="適用" data-en="Best for">適用</th>
+</tr></thead><tbody>
+<tr><td>NVIDIA L4</td><td>24 GB</td><td>30</td><td>121</td><td>~$0.7</td><td data-zh="inference、小批次訓練" data-en="Inference, small training">inference</td></tr>
+<tr><td>NVIDIA A100 40/80 GB</td><td>40/80 GB</td><td>19.5</td><td>312</td><td>~$1.5–3</td><td data-zh="百萬細胞 scRNA-seq、AlphaFold" data-en="Million-cell scRNA, AlphaFold">主力訓練</td></tr>
+<tr><td>NVIDIA H100</td><td>80 GB</td><td>67</td><td>989</td><td>~$3–5</td><td data-zh="大型語言/蛋白質模型" data-en="Large LM/protein models">最大模型</td></tr>
+<tr><td>NVIDIA H200</td><td>141 GB</td><td>67</td><td>989</td><td>~$4–6</td><td data-zh="記憶體吃緊的長序列" data-en="Long-sequence, memory-heavy">記憶體吃緊</td></tr>
+<tr><td>AMD MI300X</td><td>192 GB</td><td>~84</td><td>~1300</td><td>~$3–5</td><td data-zh="ROCm 生態 (PyTorch ✅)" data-en="ROCm (PyTorch supported)">ROCm</td></tr>
+<tr><td>Apple M3 Max</td><td data-zh="共享 RAM" data-en="Unified RAM">共享 RAM</td><td>~14</td><td>~28</td><td>—</td><td data-zh="本機開發、MPS backend" data-en="Local dev, MPS backend">本機開發</td></tr>
+</tbody></table>
+
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>選 GPU 的原則：</strong>(1) 先看 VRAM 夠不夠 —— 一張 24GB L4 跑不動需要 60GB 的 ESM-2 3B；(2) 訓練看 BF16 TFLOPS，inference 看 FP16/INT8；(3) 雲端短跑挑 A100/L4 spot，常駐生產線挑 H100 reserved；(4) Apple Silicon 的 MPS backend 適合在 MacBook 開發小批次原型，正式訓練再上 cloud。</span>
+<span data-lang="en"><strong>Picking a GPU:</strong> (1) Check VRAM first — a 24 GB L4 can't load a 60 GB ESM-2 3B; (2) training cares about BF16 TFLOPS, inference about FP16/INT8; (3) short bursty workloads → A100/L4 spot; long-running prod → H100 reserved; (4) Apple Silicon MPS is fine for laptop-side prototyping, cloud for serious training.</span>
+</div></div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>CUDA / ROCm / MPS 三大陣營：</strong>NVIDIA CUDA 是事實標準（生態最完整）；AMD ROCm 近年 PyTorch 支援已成熟，但 RAPIDS / cuDF 仍 NVIDIA-only；Apple MPS 對 PyTorch 已實用，但訓練速度與穩定度遠不及 CUDA。混合運算記得 <code>torch.backends.cudnn.benchmark = True</code> 來自動找最佳 kernel。</span>
+<span data-lang="en"><strong>The three GPU camps:</strong> NVIDIA CUDA is the de-facto standard (richest ecosystem); AMD ROCm has matured for PyTorch but RAPIDS / cuDF remain NVIDIA-only; Apple MPS is usable for PyTorch but lags CUDA in speed and stability. For mixed workloads enable <code>torch.backends.cudnn.benchmark = True</code> for auto kernel selection.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 5: Multi-GPU ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="四、多 GPU 策略" data-en="IV. Multi-GPU Strategies">四、多 GPU 策略</h2>
+<div data-lang="zh">
+<p>三種主流分割：</p>
+<ul>
+<li><strong>Data parallel (DP / DDP)：</strong>每張 GPU 拿完整模型 + 不同 batch，梯度做 all-reduce。最常用，PyTorch <code>DistributedDataParallel</code>、JAX <code>pmap</code>。模型必須 fit 在單卡 VRAM。</li>
+<li><strong>Model parallel / pipeline：</strong>模型切片放在不同 GPU。用於模型大於單卡（ESM-2 15B、AlphaFold-Multimer）。工具：DeepSpeed、FSDP、Megatron-LM。</li>
+<li><strong>Tensor parallel：</strong>單一層的 matrix 切片到多卡，需要快速 NVLink。Mainly LLM 訓練。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p>Three mainstream partitioning strategies:</p>
+<ul>
+<li><strong>Data parallel (DP / DDP):</strong> Each GPU holds the full model + a different batch; gradients are all-reduced. Most common; PyTorch <code>DistributedDataParallel</code>, JAX <code>pmap</code>. Model must fit on one GPU.</li>
+<li><strong>Model / pipeline parallel:</strong> Slice the model across GPUs. For models larger than one GPU (ESM-2 15B, AlphaFold-Multimer). Tools: DeepSpeed, FSDP, Megatron-LM.</li>
+<li><strong>Tensor parallel:</strong> Slice a single layer's matrix across GPUs; needs fast NVLink. Mostly LLM training.</li>
+</ul>
+</div>
+</section>
+
+<!-- ===== Section 6: Decision panel ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="五、決策面板：CPU 還是 GPU？" data-en="V. Decision Panel: CPU or GPU?">五、決策面板：CPU 還是 GPU？</h2>
+<div data-lang="zh"><p>選擇任務類型 + 調整資料規模，得到建議與理由。考慮因素：可平行度、是否線性代數重、I/O 比、模型/資料是否塞得進 VRAM。</p></div>
+<div data-lang="en"><p>Pick a task type and adjust the data scale to get a recommendation with reasoning. Factors: parallelism, linear-algebra weight, I/O ratio, whether model/data fit in VRAM.</p></div>
+
+<div class="interactive-panel">
+<h3 data-zh="🤖 任務 → 硬體建議" data-en="🤖 Task → Hardware Recommendation">🤖 Task → Hardware Recommendation</h3>
+<div class="slider-group">
+  <label><span data-zh="任務類型" data-en="Task type">任務類型</span></label>
+  <select id="taskType" style="padding:.4rem;border-radius:6px;border:1px solid #ccc;width:100%">
+    <option value="scrna">scRNA-seq normalization + PCA + UMAP</option>
+    <option value="vcf">VCF parsing / annotation</option>
+    <option value="align">Short-read alignment (BWA-style)</option>
+    <option value="vi">scVI / DL variational inference</option>
+    <option value="alphafold">AlphaFold protein structure prediction</option>
+    <option value="image">Pathology / cryo-EM image segmentation</option>
+    <option value="snakemake">Snakemake DAG scheduling</option>
+    <option value="gwas">GWAS summary stats QC</option>
+  </select>
+</div>
+<div class="slider-group">
+  <label><span data-zh="資料規模" data-en="Data scale">資料規模</span> = <span id="scaleVal">100K</span></label>
+  <input type="range" id="sliderScale" min="0" max="6" value="3" step="1">
+  <small style="opacity:.7" data-lang="zh">細胞數 / variant 數 / read 數 (1K → 10M)</small>
+  <small style="opacity:.7" data-lang="en">cells / variants / reads (1K → 10M)</small>
+</div>
+<div id="recOut" style="margin-top:1rem;padding:1rem;border-radius:8px;background:#f5f7fa;border-left:4px solid #2980b9">
+  <div id="recLabel" style="font-weight:bold;font-size:1.1rem">—</div>
+  <div id="recReason" style="margin-top:.5rem;font-size:.9rem;color:#444">—</div>
+  <div id="recCost"   style="margin-top:.5rem;font-size:.85rem;color:#666;font-family:monospace">—</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 7: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該不該上 GPU？" data-en="Should I move to GPU?">該不該上 GPU？</h2>
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「資料量小 (&lt; 10MB)」</strong> → 留在 CPU；傳輸開銷比計算還大</span><span data-lang="en"><strong>"Data &lt; 10MB"</strong> → stay on CPU; transfer overhead beats compute</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「主要是 if/else、parsing、I/O」</strong> → 留在 CPU；GPU 分支效率差</span><span data-lang="en"><strong>"Heavy if/else, parsing, I/O"</strong> → stay on CPU; GPUs handle branches poorly</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「大規模矩陣 / 線性代數 / DL」</strong> → GPU，先用 CuPy / RAPIDS 做 drop-in 試試</span><span data-lang="en"><strong>"Large matrix / linalg / DL"</strong> → GPU; try CuPy / RAPIDS as drop-in first</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「scRNA-seq &gt; 30 萬細胞」</strong> → <code>rapids-singlecell</code>（scanpy API）</span><span data-lang="en"><strong>"scRNA-seq &gt; 300K cells"</strong> → <code>rapids-singlecell</code> (scanpy API)</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「模型 &gt; 單卡 VRAM」</strong> → DeepSpeed / FSDP（model parallel）；或考慮量化、gradient checkpointing</span><span data-lang="en"><strong>"Model &gt; single-GPU VRAM"</strong> → DeepSpeed / FSDP (model parallel); or quantize, gradient-checkpoint</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「OOM 但模型本來可以跑」</strong> → 降 batch size + gradient accumulation；或 fp16/bf16 mixed precision</span><span data-lang="en"><strong>"OOM but model should fit"</strong> → smaller batch + grad accumulation; or fp16/bf16 mixed precision</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q1.</strong> 下列任務中，哪一個搬到 GPU 「最不可能」帶來實質加速？</p>
+<p data-lang="en"><strong>Q1.</strong> Which of these is <em>least</em> likely to benefit from moving to GPU?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 100 萬細胞 scRNA-seq 的 PCA 與 UMAP</span><span data-lang="en">A. PCA + UMAP on 1M-cell scRNA-seq</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 解析 100GB VCF 並做欄位過濾</span><span data-lang="en">B. Parsing a 100 GB VCF with column filters</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 訓練 scVI 變分自編碼器</span><span data-lang="en">C. Training a scVI variational autoencoder</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 病理切片影像分割</span><span data-lang="en">D. Pathology slide image segmentation</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>VCF 解析是 I/O + 字串處理 + 分支密集——GPU 強在線性代數和影像，弱在 if/else 和隨機讀。<code>cudf</code> 對「已經在 GPU 上的整潔表」有用，但「解析原始檔」會被 I/O 卡住。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> VCF parsing is I/O + string + branch heavy — GPUs excel at linalg/imaging, not if/else and random reads. <code>cudf</code> helps once data is on GPU, but parsing raw files is I/O-bound.</div>
+</div>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q2.</strong> 你的 PyTorch 訓練在 batch_size=64 時 OOM。下列哪一組做法「不」會減少 GPU 記憶體？</p>
+<p data-lang="en"><strong>Q2.</strong> Your PyTorch training OOMs at batch_size=64. Which option does <em>NOT</em> reduce GPU memory?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 降 batch size 並用 gradient accumulation</span><span data-lang="en">A. Reduce batch size and use gradient accumulation</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 啟用 mixed precision (autocast + GradScaler)</span><span data-lang="en">B. Enable mixed precision (autocast + GradScaler)</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 把 learning rate 從 1e-3 改成 1e-4</span><span data-lang="en">C. Change learning rate from 1e-3 to 1e-4</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 啟用 gradient checkpointing</span><span data-lang="en">D. Enable gradient checkpointing</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Learning rate 純粹影響數值收斂，與記憶體無關。A 減少 activation、B 把 fp32 換 fp16 省一半 activation、D 用「重算代替存」省 activation——都是常用 OOM 救火法。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Learning rate affects only convergence, not memory. A reduces activations, B halves activation memory via fp16, D trades compute for memory by recomputing activations — all standard OOM remedies.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> 在 RAPIDS 工作流中，你每處理一步就 <code>cp.asnumpy()</code> 把結果搬回 CPU 看一下——為什麼效能會大幅下降？</p>
+<p data-lang="en"><strong>Q3.</strong> In a RAPIDS workflow you <code>cp.asnumpy()</code> back to CPU after every step to inspect — why does performance crater?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 每次拷貝都是 host↔device 同步障壁，PCIe 頻寬遠低於 GPU 內部，且強迫 GPU 等到資料傳完</span><span data-lang="en">A. Each copy is a host↔device sync barrier; PCIe is far slower than internal GPU bandwidth, and the GPU stalls until the copy finishes</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. CuPy 不支援 .asnumpy()</span><span data-lang="en">B. CuPy doesn't support .asnumpy()</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 會自動觸發 garbage collection</span><span data-lang="en">C. It triggers automatic garbage collection</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. CPU 比 GPU 還慢</span><span data-lang="en">D. CPUs are slower than GPUs</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>PCIe 5.0 ~64 GB/s 對上 A100 內部 ~2 TB/s 是 30 倍差距；而且 <code>.asnumpy()</code> 必須先讓 GPU 完成手邊所有 kernel 才能拷出——這個同步本身就抹掉並行收益。原則：盡量在 GPU 上跑完整段 pipeline，最後再搬回。</span>
+<span class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> PCIe 5.0 ~64 GB/s vs A100's internal ~2 TB/s is a 30× gap; <code>.asnumpy()</code> also forces the GPU to flush all pending kernels before copying — the sync alone destroys parallelism gains. Rule: run the whole pipeline on GPU, copy back at the end.</span>
+</div>
+
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="parallel-computing.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Prev">← 上一頁</span><span class="nav-title" data-zh="B3 · 平行運算" data-en="B3 · Parallel Computing">B3 · 平行運算</span></a>
+<a href="bio-data-formats.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="C1 · 生醫資料格式" data-en="C1 · Bioinformatics Data Formats">C1 · 生醫資料格式</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · B4 GPU 加速生醫運算</footer>
+
+<script src="i18n.js"></script>
+<script>
+// ===== Interactive: Task → CPU/GPU recommendation =====
+const tasks = {
+  scrna: {
+    name: "scRNA-seq normalize + PCA + UMAP",
+    gpuFriendly: 0.95,
+    minScaleForGpu: 1,       // 10K cells already worth it
+    cpu: "scanpy on CPU",
+    gpu: "rapids-singlecell (cuML PCA/UMAP)",
+    note: { zh: "大量矩陣乘法 + 近鄰圖；GPU 在百萬細胞時可 30–50× 加速。", en: "Heavy matrix multiplies + neighbor graph; GPU yields 30–50× at million-cell scale." }
+  },
+  vcf: {
+    name: "VCF parsing / annotation",
+    gpuFriendly: 0.2,
+    minScaleForGpu: 6,
+    cpu: "pysam / bcftools / DuckDB",
+    gpu: "cudf (only if already in GPU memory)",
+    note: { zh: "I/O + 字串分支密集；GPU 弱項，留在 CPU。", en: "I/O + string + branch heavy; GPU is weak here — stay on CPU." }
+  },
+  align: {
+    name: "Short-read alignment",
+    gpuFriendly: 0.7,
+    minScaleForGpu: 4,
+    cpu: "BWA-MEM2 (CPU)",
+    gpu: "NVIDIA Parabricks fq2bam (BWA on GPU)",
+    note: { zh: "30× WGS 在 A100 上 ~30 分鐘，CPU ~30 小時。但需要 Parabricks 授權。", en: "30× WGS on A100 ~30 min vs ~30 hr on CPU. Requires Parabricks license." }
+  },
+  vi: {
+    name: "scVI variational autoencoder",
+    gpuFriendly: 0.95,
+    minScaleForGpu: 1,
+    cpu: "scvi-tools on CPU (extremely slow)",
+    gpu: "scvi-tools on GPU (default)",
+    note: { zh: "DL 模型本來就為 GPU 設計；CPU 上幾乎不可行。", en: "DL model built for GPU; CPU is practically infeasible." }
+  },
+  alphafold: {
+    name: "AlphaFold structure prediction",
+    gpuFriendly: 0.95,
+    minScaleForGpu: 0,
+    cpu: "Not practical",
+    gpu: "AlphaFold2/3 on A100/H100 (40GB+ VRAM for long seqs)",
+    note: { zh: "強烈建議 A100 80GB 以上；長序列需要更大 VRAM。", en: "Strongly recommend A100 80GB+; long sequences need more VRAM." }
+  },
+  image: {
+    name: "Pathology / cryo-EM segmentation",
+    gpuFriendly: 0.9,
+    minScaleForGpu: 1,
+    cpu: "stardist / cellpose (CPU)",
+    gpu: "cellpose-GPU / monai (GPU)",
+    note: { zh: "CNN 推論在 GPU 上 10–30× 加速。WSI 全片建議 GPU。", en: "CNN inference 10–30× on GPU. Whole-slide images strongly favor GPU." }
+  },
+  snakemake: {
+    name: "Snakemake DAG scheduling",
+    gpuFriendly: 0.0,
+    minScaleForGpu: 999,
+    cpu: "Snakemake on CPU (the scheduler itself)",
+    gpu: "N/A — scheduler is not compute-bound",
+    note: { zh: "scheduler 本身不是計算瓶頸，但你可以把個別 rule 排到 GPU。", en: "The scheduler is not compute-bound. Individual rules can target GPU." }
+  },
+  gwas: {
+    name: "GWAS summary statistics QC",
+    gpuFriendly: 0.5,
+    minScaleForGpu: 5,
+    cpu: "PLINK2 + data.table",
+    gpu: "cudf (only for very large multi-cohort merges)",
+    note: { zh: "PLINK2 已高度向量化；超過 1 千萬 variants 跨 cohort merge 才考慮 GPU。", en: "PLINK2 is already vectorized; only consider GPU for &gt;10M-variant cross-cohort merges." }
+  }
+};
+
+const scales = [1000, 10000, 100000, 1000000, 5000000, 10000000];
+const scaleLabels = ["1K", "10K", "100K", "1M", "5M", "10M"];
+
+function fmt(n){ if (n>=1e6) return (n/1e6).toFixed(1)+'M'; if (n>=1e3) return (n/1e3).toFixed(0)+'K'; return ''+n; }
+
+function recommend(){
+  const t = document.getElementById('taskType').value;
+  const sIdx = +document.getElementById('sliderScale').value;
+  const scale = scales[sIdx];
+  document.getElementById('scaleVal').textContent = scaleLabels[sIdx];
+
+  const cfg = tasks[t];
+  const shouldUseGpu = cfg.gpuFriendly > 0.5 && sIdx >= cfg.minScaleForGpu;
+  const label = shouldUseGpu ? "→ GPU recommended" : "→ Stay on CPU";
+  const tool  = shouldUseGpu ? cfg.gpu : cfg.cpu;
+  const color = shouldUseGpu ? "#27ae60" : "#2980b9";
+
+  document.getElementById('recLabel').innerHTML = `${cfg.name}<br><span style="color:${color}">${label}</span>`;
+  document.getElementById('recReason').innerHTML =
+    `<strong>Tool:</strong> ${tool}<br>
+     <span data-lang="zh">${cfg.note.zh}</span>
+     <span data-lang="en">${cfg.note.en}</span>`;
+  // re-apply i18n display
+  const lang = document.documentElement.lang.startsWith("en") ? "en" : "zh";
+  document.querySelectorAll('#recReason [data-lang]').forEach(el => {
+    el.style.display = el.getAttribute('data-lang') === lang ? '' : 'none';
+  });
+
+  // crude cost estimate
+  let costStr = "";
+  if (shouldUseGpu) {
+    const gpuMin = t === "alphafold" ? 30 + scale/200 : Math.max(1, scale / 50000);
+    const usd = gpuMin / 60 * 2.5;
+    costStr = `est. A100 runtime: ~${gpuMin.toFixed(0)} min  |  cloud cost ~$${usd.toFixed(2)} USD`;
+  } else {
+    const cpuMin = Math.max(1, scale / 10000);
+    costStr = `est. 16-core CPU runtime: ~${cpuMin.toFixed(0)} min  |  GPU not worth the move`;
+  }
+  document.getElementById('recCost').textContent = costStr;
+  document.getElementById('recOut').style.borderLeftColor = color;
+}
+document.getElementById('taskType').addEventListener('change', recommend);
+document.getElementById('sliderScale').addEventListener('input', recommend);
+recommend();
+</script>
+</body></html>

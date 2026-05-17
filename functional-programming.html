@@ -1,0 +1,640 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>A3: 函數式程式設計 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html" class="active">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK A · TOPIC 3 / 20</div>
+<h1 data-zh="函數式程式設計：純函式、map/reduce、closure" data-en="Functional Programming: pure functions, map/reduce, closures">函數式程式設計：純函式、map/reduce、closure</h1>
+<p class="subtitle" data-lang="zh">為什麼 FP 讓 bioinformatics pipeline 更易於並行、測試、與重現？從 Python 的 <code>functools / itertools</code> 到 R 的 <code>purrr</code>，把 for-loop 重寫成可組合的高階函式。</p>
+<p class="subtitle" data-lang="en">Why FP makes bioinformatics pipelines easier to parallelize, test, and reproduce — from Python's <code>functools / itertools</code> to R's <code>purrr</code>, rewrite for-loops as composable higher-order functions.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼函數式對 bioinformatics 重要？" data-en="Why FP matters in bioinformatics">為什麼函數式對 bioinformatics 重要？</h2>
+<div data-lang="zh">
+<p>bioinformatics pipeline 的本質：「把同一個函式套到 N 個樣本上、收集結果」。這正是 <code>map</code> 的形狀。一旦你的程式以「純函式 + map/reduce」表達，下列三件事就免費送你：</p>
+<ul>
+<li><strong>並行化：</strong>純函式無副作用，<code>map</code> 可無痛換成 <code>parallel::mclapply</code>、<code>multiprocessing.Pool</code>、Snakemake jobs。</li>
+<li><strong>重現性：</strong>沒有全域狀態與隱藏副作用，給相同輸入永遠得到相同輸出——這是科學的最低要求。</li>
+<li><strong>可測性：</strong>純函式不需要 mock 檔案系統 / 資料庫 / 網路，pytest / testthat 一行解決。</li>
+</ul>
+<p>本頁六個主題：<strong>純函式 vs 副作用</strong>、<strong>map / filter / reduce</strong>、<strong>closure & partial</strong>、<strong>函式組合</strong>、<strong>不可變性</strong>、<strong>safely / possibly 容錯</strong>。</p>
+</div>
+<div data-lang="en">
+<p>The essence of a bioinformatics pipeline: "apply the same function to N samples, collect results." That's literally the shape of <code>map</code>. Once your code is expressed as "pure functions + map/reduce," three gifts come for free:</p>
+<ul>
+<li><strong>Parallelism:</strong> pure functions have no side effects, so <code>map</code> swaps trivially for <code>parallel::mclapply</code>, <code>multiprocessing.Pool</code>, or Snakemake jobs.</li>
+<li><strong>Reproducibility:</strong> no global state, no hidden side effects — same input always yields same output. The bedrock of science.</li>
+<li><strong>Testability:</strong> pure functions need no filesystem / DB / network mocks — pytest / testthat one-liner.</li>
+</ul>
+<p>Topics: <strong>pure vs side effects</strong>, <strong>map / filter / reduce</strong>, <strong>closures & partial</strong>, <strong>composition</strong>, <strong>immutability</strong>, <strong>safely / possibly fault tolerance</strong>.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>學習策略：</strong>不必把每個 for-loop 都改寫成 FP。判斷準則：「這個迴圈是 transform (每個元素獨立)？還是 sequential (前後依賴狀態)？」前者用 map，後者保留 for-loop。</span>
+<span data-lang="en"><strong>Learning strategy:</strong> Don't FP-ify every for-loop. The test: "Is this loop a transform (each element independent) or sequential (state depends on prior iteration)?" Use map for the former, keep the for-loop for the latter.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Pure functions ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、純函式與副作用" data-en="I. Pure functions & side effects">一、純函式與副作用</h2>
+<div data-lang="zh">
+<p><strong>純函式</strong>滿足兩條件：(1) 相同輸入永遠回傳相同輸出 (referential transparency)；(2) 不修改外部狀態 (no side effect)。常見副作用：寫檔案、改全域變數、發網路請求、印 log、改傳入物件。</p>
+</div>
+<div data-lang="en">
+<p>A <strong>pure function</strong> satisfies two conditions: (1) same input always yields same output (referential transparency); (2) no external state mutation (no side effect). Common side effects: writing files, mutating globals, network calls, printing logs, mutating the argument.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">impure.py</button>
+<button class="code-tab-btn">pure.py</button>
+<button class="code-tab-btn">impure.R</button>
+<button class="code-tab-btn">pure.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">impure.py — three hidden problems</span><pre><span class="kw">import</span> pandas <span class="kw">as</span> pd
+
+THRESHOLD = <span class="num">0.05</span>             <span class="comment"># 1. hidden global dependency</span>
+log = []                       <span class="comment"># 2. external mutable state</span>
+
+<span class="kw">def</span> <span class="func">filter_sig_genes</span>(df):
+    df[<span class="str">"is_sig"</span>] = df.padj &lt; THRESHOLD  <span class="comment"># 3. mutates caller's df!</span>
+    log.append(<span class="str">f"filtered at {THRESHOLD}"</span>)
+    <span class="kw">return</span> df[df.is_sig]
+
+<span class="comment"># Problems:</span>
+<span class="comment">#  - Changing THRESHOLD silently changes behavior of every call</span>
+<span class="comment">#  - The input df is mutated → caller's df is altered (action at a distance)</span>
+<span class="comment">#  - Hard to test: depends on globals; logs accumulate across tests</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">pure.py — explicit inputs, return new object</span><pre><span class="kw">def</span> <span class="func">filter_sig_genes</span>(df: pd.DataFrame, threshold: float = <span class="num">0.05</span>) -&gt; pd.DataFrame:
+    <span class="str">"""Return a NEW DataFrame of significant genes; do not mutate input."""</span>
+    out = df.copy()
+    out[<span class="str">"is_sig"</span>] = out.padj &lt; threshold
+    <span class="kw">return</span> out.loc[out.is_sig].drop(columns=<span class="str">"is_sig"</span>)
+
+<span class="comment"># Benefits:</span>
+<span class="comment">#  - Threshold is explicit — no spooky-action-at-a-distance</span>
+<span class="comment">#  - Input df is untouched — safe in pipelines & parallel maps</span>
+<span class="comment">#  - Trivially testable: assert filter_sig_genes(toy_df, 0.05) == expected</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">impure.R — hidden global, mutation</span><pre>THRESHOLD &lt;- <span class="num">0.05</span>
+log_msgs  &lt;- <span class="func">character</span>()
+
+filter_sig &lt;- <span class="kw">function</span>(df) {
+  df$is_sig &lt;&lt;- df$padj &lt; THRESHOLD          <span class="comment"># &lt;&lt;- modifies parent env!</span>
+  log_msgs &lt;&lt;- <span class="func">c</span>(log_msgs, <span class="str">"filtered"</span>)        <span class="comment"># side effect</span>
+  df[df$is_sig, ]
+}
+
+<span class="comment"># R fortunately doesn't have shared mutable objects, but &lt;&lt;- still pollutes</span>
+<span class="comment"># the enclosing env and creates the same testability nightmare.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">pure.R — explicit args, return new df</span><pre>filter_sig &lt;- <span class="kw">function</span>(df, threshold = <span class="num">0.05</span>) {
+  df |&gt;
+    dplyr::<span class="func">mutate</span>(is_sig = padj &lt; threshold) |&gt;
+    dplyr::<span class="func">filter</span>(is_sig) |&gt;
+    dplyr::<span class="func">select</span>(-is_sig)
+}
+
+<span class="comment"># Tests are now one-liners:</span>
+<span class="comment"># expect_equal(filter_sig(toy_df, 0.05) |&gt; nrow(), 3)</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 3: Interactive — for vs map ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動對比" data-en="INTERACTIVE">互動對比</div>
+<h2 data-zh="二、for-loop vs map 對照" data-en="II. for-loop vs map side-by-side">二、for-loop vs map 對照</h2>
+
+<div class="interactive-panel">
+<h3 data-zh="點按下方按鈕，切換語言對比兩種寫法" data-en="Click to switch language and compare">點按下方按鈕，切換語言對比兩種寫法</h3>
+<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0">
+  <button class="code-tab-btn lang-btn active" data-lang-key="py">Python</button>
+  <button class="code-tab-btn lang-btn" data-lang-key="r">R (purrr)</button>
+</div>
+<div id="compareBox" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+  <div>
+    <div style="font-size:.8rem;opacity:.7;margin-bottom:.3rem" data-zh="❌ for-loop 風格" data-en="❌ for-loop style">❌ for-loop 風格</div>
+    <pre id="codeFor" style="font-size:.85rem;padding:.6rem;border:1px solid var(--border,#ddd);border-radius:6px;overflow-x:auto"></pre>
+  </div>
+  <div>
+    <div style="font-size:.8rem;opacity:.7;margin-bottom:.3rem" data-zh="✓ map 風格" data-en="✓ map style">✓ map 風格</div>
+    <pre id="codeMap" style="font-size:.85rem;padding:.6rem;border:1px solid var(--border,#ddd);border-radius:6px;overflow-x:auto"></pre>
+  </div>
+</div>
+<div class="sim-stats" style="margin-top:1rem">
+  <span class="sim-stat info" id="cmpLines">— lines</span>
+  <span class="sim-stat info" id="cmpParallel">— parallel</span>
+  <span class="sim-stat info" id="cmpTest">— testable</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 4: map/filter/reduce ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="三、map / filter / reduce — 三大基本動詞" data-en="III. map / filter / reduce — the three primitives">三、map / filter / reduce — 三大基本動詞</h2>
+<div data-lang="zh">
+<p>三個動詞概括 99% 的 transform 需求：<strong>map</strong> = 對每個元素套用同一函式；<strong>filter</strong> = 留下符合條件的元素；<strong>reduce</strong> = 把序列摺疊成單一值。Python 用 <code>map / filter / functools.reduce</code> 或 list comprehension；R 用 <code>purrr::map_*</code> / <code>purrr::keep</code> / <code>purrr::reduce</code>。</p>
+</div>
+<div data-lang="en">
+<p>Three verbs cover 99% of transformations: <strong>map</strong> applies the same function to each element; <strong>filter</strong> keeps elements that satisfy a predicate; <strong>reduce</strong> folds a sequence into a single value. Python: <code>map / filter / functools.reduce</code> or comprehensions. R: <code>purrr::map_*</code> / <code>purrr::keep</code> / <code>purrr::reduce</code>.</p>
+</div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="動詞" data-en="Verb">動詞</th>
+<th>Python</th>
+<th>R (purrr)</th>
+<th data-zh="輸入 → 輸出" data-en="Input → Output">輸入 → 輸出</th>
+</tr></thead><tbody>
+<tr><td><strong>map</strong></td><td><code>map(f, xs)</code> / <code>[f(x) for x in xs]</code></td><td><code>map(xs, f)</code></td><td>list[A] → list[B]</td></tr>
+<tr><td><strong>filter</strong></td><td><code>filter(p, xs)</code> / <code>[x for x in xs if p(x)]</code></td><td><code>keep(xs, p)</code> / <code>discard</code></td><td>list[A] → list[A]</td></tr>
+<tr><td><strong>reduce</strong></td><td><code>functools.reduce(f, xs, init)</code></td><td><code>reduce(xs, f, .init=init)</code></td><td>list[A] → B</td></tr>
+<tr><td><strong>map + flatten</strong></td><td><code>itertools.chain.from_iterable(map(f, xs))</code></td><td><code>map_dfr</code>, <code>map(...) |&gt; flatten()</code></td><td>list[A] → list[B] (扁平化)</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">map.py</button>
+<button class="code-tab-btn">purrr.R</button>
+<button class="code-tab-btn">map_variants.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">map.py — Python idioms</span><pre><span class="kw">from</span> functools <span class="kw">import</span> reduce
+<span class="kw">from</span> itertools <span class="kw">import</span> chain
+<span class="kw">import</span> operator <span class="kw">as</span> op
+
+sample_paths = [<span class="str">"s1.fq.gz"</span>, <span class="str">"s2.fq.gz"</span>, <span class="str">"s3.fq.gz"</span>]
+
+<span class="comment"># map: count reads per sample</span>
+counts = [count_reads(p) <span class="kw">for</span> p <span class="kw">in</span> sample_paths]
+<span class="comment"># or:  counts = list(map(count_reads, sample_paths))</span>
+
+<span class="comment"># filter: keep samples with &gt;= 1M reads</span>
+big = [p <span class="kw">for</span> p, c <span class="kw">in</span> <span class="func">zip</span>(sample_paths, counts) <span class="kw">if</span> c &gt;= <span class="num">1_000_000</span>]
+
+<span class="comment"># reduce: total reads across all samples</span>
+total = reduce(op.add, counts, <span class="num">0</span>)            <span class="comment"># or just sum(counts)</span>
+
+<span class="comment"># map then flatten: gather all variants from all VCFs into one list</span>
+all_variants = list(chain.from_iterable(parse_vcf(p) <span class="kw">for</span> p <span class="kw">in</span> vcf_paths))
+</pre></div>
+<div class="code-tab-content"><span class="filename">purrr.R — typed map variants</span><pre><span class="kw">library</span>(purrr)
+
+sample_paths &lt;- <span class="func">c</span>(<span class="str">"s1.fq.gz"</span>, <span class="str">"s2.fq.gz"</span>, <span class="str">"s3.fq.gz"</span>)
+
+<span class="comment"># map() returns a list; typed variants force the output type</span>
+counts &lt;- <span class="func">map_int</span>(sample_paths, count_reads)       <span class="comment"># integer vector</span>
+ratios &lt;- <span class="func">map_dbl</span>(sample_paths, gc_ratio)         <span class="comment"># numeric vector</span>
+ok     &lt;- <span class="func">map_lgl</span>(sample_paths, fs::file_exists)   <span class="comment"># logical vector</span>
+
+<span class="comment"># keep / discard = filter</span>
+big &lt;- sample_paths |&gt; <span class="func">keep</span>(\(p) count_reads(p) &gt;= <span class="num">1e6</span>)
+
+<span class="comment"># reduce — combine list of data.frames into one</span>
+all_qc &lt;- <span class="func">map</span>(sample_paths, run_qc) |&gt; <span class="func">reduce</span>(bind_rows)
+
+<span class="comment"># map_dfr is the idiomatic shortcut: returns a single combined data.frame</span>
+all_qc &lt;- <span class="func">map_dfr</span>(sample_paths, run_qc, .id = <span class="str">"sample"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">map_variants.R — map2, pmap, walk</span><pre><span class="comment"># map2: iterate two parallel vectors</span>
+fastq_R1 &lt;- <span class="func">c</span>(<span class="str">"s1_R1.fq"</span>, <span class="str">"s2_R1.fq"</span>)
+fastq_R2 &lt;- <span class="func">c</span>(<span class="str">"s1_R2.fq"</span>, <span class="str">"s2_R2.fq"</span>)
+bam_paths &lt;- <span class="func">map2_chr</span>(fastq_R1, fastq_R2, align_paired)
+
+<span class="comment"># pmap: iterate &gt;= 3 parallel vectors via a tibble</span>
+params &lt;- tibble::<span class="func">tibble</span>(
+  sample   = <span class="func">c</span>(<span class="str">"s1"</span>, <span class="str">"s2"</span>),
+  fastq_R1 = fastq_R1,
+  fastq_R2 = fastq_R2,
+  threads  = <span class="func">c</span>(<span class="num">8</span>, <span class="num">16</span>)
+)
+bams &lt;- <span class="func">pmap_chr</span>(params, align_paired)         <span class="comment"># names match arg names</span>
+
+<span class="comment"># walk: like map but for side effects only (returns invisible input)</span>
+<span class="func">walk</span>(bam_paths, \(b) <span class="func">message</span>(<span class="str">"Indexing "</span>, b))
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: Closures & partial ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="四、Closure 與 partial application" data-en="IV. Closures & partial application">四、Closure 與 partial application</h2>
+<div data-lang="zh">
+<p><strong>Closure</strong>：函式「夾帶」其定義時可見的變數。<strong>Partial application</strong>：把多參數函式的一部分參數先「凍住」，得到一個只剩剩餘參數的新函式——常用於設定預設值、適配第三方 API。</p>
+</div>
+<div data-lang="en">
+<p><strong>Closure</strong>: a function carries the variables visible at its definition site. <strong>Partial application</strong>: pre-bind some args of a multi-arg function to get a new function with fewer params — used for setting defaults or adapting third-party APIs.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">closure.py</button>
+<button class="code-tab-btn">partial.py</button>
+<button class="code-tab-btn">closure.R</button>
+<button class="code-tab-btn">partial.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">closure.py — factory pattern</span><pre><span class="kw">def</span> <span class="func">make_qc_filter</span>(min_features: int, max_mt: float):
+    <span class="str">"""Return a filter configured for a specific QC setup."""</span>
+    <span class="kw">def</span> <span class="func">_filter</span>(adata):
+        <span class="kw">return</span> adata[
+            (adata.obs.nFeature &gt;= min_features) &amp;
+            (adata.obs.pct_mt   &lt;= max_mt)
+        ].copy()
+    <span class="kw">return</span> _filter
+
+<span class="comment"># Each closure remembers its OWN config</span>
+strict = make_qc_filter(min_features=<span class="num">500</span>, max_mt=<span class="num">5</span>)
+loose  = make_qc_filter(min_features=<span class="num">200</span>, max_mt=<span class="num">20</span>)
+
+<span class="comment"># Now pass `strict` or `loose` anywhere a filter is expected</span>
+clean = strict(adata)
+</pre></div>
+<div class="code-tab-content"><span class="filename">partial.py — functools.partial</span><pre><span class="kw">from</span> functools <span class="kw">import</span> partial
+<span class="kw">import</span> pandas <span class="kw">as</span> pd
+
+<span class="kw">def</span> <span class="func">read_tsv</span>(path, sep=<span class="str">"\t"</span>, comment=<span class="str">"#"</span>, header=<span class="num">0</span>):
+    <span class="kw">return</span> pd.read_csv(path, sep=sep, comment=comment, header=header)
+
+<span class="comment"># Pre-bind defaults that fit MAF files (no header, # comments)</span>
+read_maf = partial(read_tsv, comment=<span class="str">"#"</span>, header=<span class="kw">None</span>)
+read_gtf = partial(read_tsv, comment=<span class="str">"#"</span>, header=<span class="kw">None</span>, sep=<span class="str">"\t"</span>)
+
+mafs = [read_maf(p) <span class="kw">for</span> p <span class="kw">in</span> maf_paths]   <span class="comment"># clean, intent-revealing</span>
+
+<span class="comment"># In a parallel map, partial avoids capturing variables in lambdas</span>
+<span class="kw">from</span> multiprocessing <span class="kw">import</span> Pool
+<span class="kw">with</span> Pool(<span class="num">8</span>) <span class="kw">as</span> p:
+    counts = p.map(partial(count_reads, min_q=<span class="num">20</span>), sample_paths)
+</pre></div>
+<div class="code-tab-content"><span class="filename">closure.R</span><pre>make_qc_filter &lt;- <span class="kw">function</span>(min_features, max_mt) {
+  <span class="kw">function</span>(meta) {
+    meta |&gt;
+      dplyr::<span class="func">filter</span>(nFeature &gt;= min_features, pct_mt &lt;= max_mt)
+  }
+}
+
+strict &lt;- make_qc_filter(<span class="num">500</span>, <span class="num">5</span>)
+loose  &lt;- make_qc_filter(<span class="num">200</span>, <span class="num">20</span>)
+
+<span class="comment"># Each closure carries its own bindings (peek inside):</span>
+<span class="func">environment</span>(strict)$min_features   <span class="comment"># 500</span>
+<span class="func">environment</span>(loose)$min_features    <span class="comment"># 200</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">partial.R — purrr::partial</span><pre><span class="kw">library</span>(purrr); <span class="kw">library</span>(readr)
+
+<span class="comment"># purrr::partial pre-binds arguments to create a specialized function</span>
+read_maf &lt;- <span class="func">partial</span>(read_tsv, comment = <span class="str">"#"</span>, col_names = <span class="kw">FALSE</span>)
+read_gtf &lt;- <span class="func">partial</span>(read_tsv, comment = <span class="str">"#"</span>, col_names = <span class="kw">FALSE</span>,
+                     col_types = <span class="func">cols</span>())
+
+<span class="comment"># Then use in a map — much cleaner than anonymous lambdas</span>
+maf_list &lt;- <span class="func">map</span>(maf_paths, read_maf)
+
+<span class="comment"># Equivalent with anonymous fn (verbose):</span>
+<span class="comment"># map(maf_paths, \(p) read_tsv(p, comment = "#", col_names = FALSE))</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: Composition ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="五、函式組合與管線" data-en="V. Function composition & pipelines">五、函式組合與管線</h2>
+<div data-lang="zh">
+<p>「組合 (compose)」是把多個小函式串成新函式：<code>(f ∘ g)(x) = f(g(x))</code>。bioinformatics pipeline 天然是組合形式：<code>parse_vcf → filter_pass → annotate → write_tsv</code>。Python 沒有原生 <code>compose</code> (但可手寫或用 <code>toolz</code>)；R 有 <code>purrr::compose</code> 與管線。</p>
+</div>
+<div data-lang="en">
+<p>"Composition" chains small functions into a new one: <code>(f ∘ g)(x) = f(g(x))</code>. Bioinformatics pipelines are naturally compositional: <code>parse_vcf → filter_pass → annotate → write_tsv</code>. Python lacks a built-in <code>compose</code> (write it or use <code>toolz</code>); R has <code>purrr::compose</code> and the pipe.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">compose.py</button>
+<button class="code-tab-btn">compose.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">compose.py — manual or via toolz</span><pre><span class="kw">from</span> functools <span class="kw">import</span> reduce
+
+<span class="kw">def</span> <span class="func">compose</span>(*fns):
+    <span class="str">"""compose(f, g, h)(x) == f(g(h(x)))  — right to left, like math."""</span>
+    <span class="kw">return</span> <span class="kw">lambda</span> x: reduce(<span class="kw">lambda</span> acc, fn: fn(acc), <span class="func">reversed</span>(fns), x)
+
+<span class="comment"># Small, pure, single-purpose units</span>
+<span class="kw">def</span> <span class="func">drop_low_qual</span>(rec):   <span class="kw">return</span> rec <span class="kw">if</span> rec.qual &gt;= <span class="num">30</span> <span class="kw">else</span> <span class="kw">None</span>
+<span class="kw">def</span> <span class="func">to_bed</span>(rec):          <span class="kw">return</span> <span class="str">f"{rec.chrom}\t{rec.start}\t{rec.end}"</span>
+<span class="kw">def</span> <span class="func">add_annot</span>(rec):       ...
+
+pipeline = compose(to_bed, add_annot, drop_low_qual)
+lines = [pipeline(r) <span class="kw">for</span> r <span class="kw">in</span> variants <span class="kw">if</span> pipeline(r) <span class="kw">is not</span> <span class="kw">None</span>]
+
+<span class="comment"># With toolz / cytoolz (preferred for production):</span>
+<span class="comment"># from toolz import compose, pipe</span>
+<span class="comment"># pipe(variants, partial(filter, drop_low_qual), partial(map, add_annot), list)</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">compose.R — three options</span><pre><span class="kw">library</span>(purrr)
+
+drop_low_qual &lt;- <span class="kw">function</span>(rec) <span class="kw">if</span> (rec$qual &gt;= <span class="num">30</span>) rec <span class="kw">else</span> <span class="kw">NULL</span>
+add_annot     &lt;- <span class="kw">function</span>(rec) { rec$annot &lt;- lookup(rec$pos); rec }
+to_bed        &lt;- <span class="kw">function</span>(rec) <span class="func">sprintf</span>(<span class="str">"%s\t%d\t%d"</span>, rec$chrom, rec$start, rec$end)
+
+<span class="comment"># Option 1: purrr::compose — math order (right to left)</span>
+pipeline &lt;- <span class="func">compose</span>(to_bed, add_annot, drop_low_qual)
+
+<span class="comment"># Option 2: purrr::compose with .dir = "forward" (read left to right)</span>
+pipeline2 &lt;- <span class="func">compose</span>(drop_low_qual, add_annot, to_bed, .dir = <span class="str">"forward"</span>)
+
+<span class="comment"># Option 3: just use |> for a one-off pipeline (most idiomatic in R)</span>
+bed_lines &lt;- variants |&gt;
+  <span class="func">discard</span>(\(r) is.null(drop_low_qual(r))) |&gt;
+  <span class="func">map</span>(add_annot) |&gt;
+  <span class="func">map_chr</span>(to_bed)
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 7: Immutability ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 5" data-en="TOPIC 5">主題 5</div>
+<h2 data-zh="六、不可變性 (immutability)" data-en="VI. Immutability">六、不可變性 (immutability)</h2>
+<div data-lang="zh">
+<p>不可變物件無法被修改——任何「修改」操作都回傳新物件。好處：跨執行緒安全、易於 cache、可作 dict/set key。R 的多數結構天生不可變 (copy-on-modify)；Python 中你需要刻意選擇 <code>tuple</code>、<code>frozenset</code>、<code>@dataclass(frozen=True)</code>，並避免 in-place 操作 (<code>df.drop(...)</code> 而非 <code>df.drop(..., inplace=True)</code>)。</p>
+</div>
+<div data-lang="en">
+<p>Immutable objects cannot be modified — any "modification" returns a new object. Benefits: thread-safe, easy to cache, usable as dict/set keys. Most R structures are immutable by default (copy-on-modify); in Python you must deliberately pick <code>tuple</code>, <code>frozenset</code>, <code>@dataclass(frozen=True)</code> and avoid in-place ops (use <code>df.drop(...)</code>, not <code>df.drop(..., inplace=True)</code>).</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">immut.py</button>
+<button class="code-tab-btn">immut_check.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">immut.py — choose immutable structures</span><pre><span class="kw">from</span> dataclasses <span class="kw">import</span> dataclass
+
+<span class="kw">@</span><span class="func">dataclass</span>(frozen=<span class="kw">True</span>, slots=<span class="kw">True</span>)   <span class="comment"># frozen → immutable & hashable</span>
+<span class="kw">class</span> <span class="cls">Variant</span>:
+    chrom: str
+    pos: int
+    ref: str
+    alt: str
+
+<span class="comment"># Now usable as a dict key — perfect for de-duplication / lookups</span>
+seen: <span class="kw">set</span>[Variant] = <span class="kw">set</span>()
+<span class="kw">for</span> rec <span class="kw">in</span> all_variants:
+    v = Variant(rec.chrom, rec.pos, rec.ref, rec.alt)
+    <span class="kw">if</span> v <span class="kw">not in</span> seen:
+        seen.add(v)
+        write(rec)
+
+<span class="comment"># tuple instead of list when the size is fixed</span>
+gene_coord: <span class="kw">tuple</span>[str, int, int] = (<span class="str">"chr17"</span>, <span class="num">43044295</span>, <span class="num">43125483</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">immut_check.py — pandas: avoid inplace</span><pre><span class="kw">import</span> pandas <span class="kw">as</span> pd
+
+<span class="comment"># ❌ Mutates caller's df — surprises in pipelines, breaks parallel maps</span>
+<span class="kw">def</span> <span class="func">drop_failed</span>(df):
+    df.drop(df[df.qual &lt; <span class="num">30</span>].index, inplace=<span class="kw">True</span>)
+    <span class="kw">return</span> df
+
+<span class="comment"># ✅ Return a new df; caller's df untouched</span>
+<span class="kw">def</span> <span class="func">drop_failed</span>(df: pd.DataFrame) -&gt; pd.DataFrame:
+    <span class="kw">return</span> df.loc[df.qual &gt;= <span class="num">30</span>].reset_index(drop=<span class="kw">True</span>)
+
+<span class="comment"># Bonus: chain pure ops — each step yields a new df</span>
+result = (df
+    .pipe(drop_failed)
+    .pipe(annotate_genes)
+    .pipe(<span class="kw">lambda</span> d: d.sort_values(<span class="str">"chrom"</span>))
+)
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 8: safely/possibly ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 6" data-en="TOPIC 6">主題 6</div>
+<h2 data-zh="七、安全的 map — safely / possibly / quietly" data-en="VII. Safe map — safely / possibly / quietly">七、安全的 map — safely / possibly / quietly</h2>
+<div data-lang="zh">
+<p>當你對 1000 個樣本跑 <code>map(samples, run_pipeline)</code>，第 372 個樣本壞了——預設行為是 <strong>整批失敗</strong>。purrr 的 <code>safely() / possibly() / quietly()</code> 把不純的副作用「函式化」，讓壞的樣本只變成「壞的回傳值」而非中斷流程。</p>
+</div>
+<div data-lang="en">
+<p>When running <code>map(samples, run_pipeline)</code> over 1000 samples, sample #372 fails — by default <strong>the whole batch crashes</strong>. purrr's <code>safely() / possibly() / quietly()</code> turn impure side effects into pure return values: a bad sample becomes a "bad return," not a halted pipeline.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">safely.R</button>
+<button class="code-tab-btn">possibly.R</button>
+<button class="code-tab-btn">python_equiv.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">safely.R — wrap so errors become return values</span><pre><span class="kw">library</span>(purrr)
+
+<span class="comment"># safely() returns list(result, error). One always exists, one is NULL.</span>
+safe_run &lt;- <span class="func">safely</span>(run_pipeline)
+
+results &lt;- <span class="func">map</span>(sample_ids, safe_run)
+<span class="comment"># results[[1]] is list(result = ..., error = NULL) or vice versa</span>
+
+<span class="comment"># Separate the wheat from the chaff</span>
+ok       &lt;- results |&gt; <span class="func">map</span>(<span class="str">"result"</span>) |&gt; <span class="func">compact</span>()        <span class="comment"># successes</span>
+failures &lt;- results |&gt; <span class="func">map</span>(<span class="str">"error"</span>)  |&gt; <span class="func">compact</span>()        <span class="comment"># errors</span>
+
+<span class="comment"># transpose() is the canonical way to flip list-of-lists</span>
+res_t &lt;- <span class="func">transpose</span>(results)
+ok_results &lt;- res_t$result |&gt; <span class="func">compact</span>()
+errors     &lt;- res_t$error  |&gt; <span class="func">compact</span>()
+</pre></div>
+<div class="code-tab-content"><span class="filename">possibly.R — supply a default on error</span><pre><span class="comment"># possibly() returns the value or .otherwise if it fails — no error wrapper</span>
+poss_count &lt;- <span class="func">possibly</span>(count_reads, otherwise = NA_integer_)
+
+counts &lt;- <span class="func">map_int</span>(fastq_paths, poss_count)
+<span class="comment"># NA where count_reads() threw an error; integer elsewhere</span>
+
+<span class="comment"># quietly() also captures warnings / messages / output</span>
+quiet_lm &lt;- <span class="func">quietly</span>(stats::lm)
+out &lt;- quiet_lm(mpg ~ wt, data = mtcars)
+out$result; out$output; out$warnings; out$messages
+</pre></div>
+<div class="code-tab-content"><span class="filename">python_equiv.py — manual or via returns lib</span><pre><span class="kw">def</span> <span class="func">safely</span>(fn):
+    <span class="str">"""Mimic purrr::safely — return (result, error) tuple."""</span>
+    <span class="kw">def</span> <span class="func">wrapper</span>(*a, **kw):
+        <span class="kw">try</span>:
+            <span class="kw">return</span> (fn(*a, **kw), <span class="kw">None</span>)
+        <span class="kw">except</span> <span class="cls">Exception</span> <span class="kw">as</span> e:
+            <span class="kw">return</span> (<span class="kw">None</span>, e)
+    <span class="kw">return</span> wrapper
+
+safe_run = safely(run_pipeline)
+results = [safe_run(s) <span class="kw">for</span> s <span class="kw">in</span> sample_ids]
+ok      = [r <span class="kw">for</span> r, e <span class="kw">in</span> results <span class="kw">if</span> e <span class="kw">is</span> <span class="kw">None</span>]
+errors  = [(s, e) <span class="kw">for</span> s, (r, e) <span class="kw">in</span> <span class="func">zip</span>(sample_ids, results) <span class="kw">if</span> e]
+
+<span class="comment"># Or use a Result-monad library like `returns` (more idiomatic):</span>
+<span class="comment"># from returns.result import safe</span>
+<span class="comment"># safe(run_pipeline)(sample)  # returns Success/Failure</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 9: Decision tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用 FP 還是 for-loop？" data-en="FP or for-loop?">該用 FP 還是 for-loop？</h2>
+
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「每個元素獨立 transform」</strong> → <code>map</code> / <code>list comp</code> / <code>purrr::map_*</code></span><span data-lang="en"><strong>"Each element transforms independently"</strong> → <code>map</code> / list comp / <code>purrr::map_*</code></span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「迴圈內依賴上一輪結果 (running sum, accumulator)」</strong> → <code>functools.reduce</code> / <code>purrr::accumulate</code></span><span data-lang="en"><strong>"Iteration depends on prior result (running sum/accumulator)"</strong> → <code>functools.reduce</code> / <code>purrr::accumulate</code></span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「處理 1000 樣本，少數會壞掉」</strong> → <code>purrr::safely / possibly</code></span><span data-lang="en"><strong>"1000 samples, a few will fail"</strong> → <code>purrr::safely / possibly</code></span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「pipeline 由 N 個小步驟組成」</strong> → 組合 (compose / pipe)，每步保持純函式</span><span data-lang="en"><strong>"Pipeline of N small steps"</strong> → composition (compose / pipe), keep each step pure</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「要把函式部分參數凍住」</strong> → <code>functools.partial</code> / <code>purrr::partial</code></span><span data-lang="en"><strong>"Pre-bind some args"</strong> → <code>functools.partial</code> / <code>purrr::partial</code></span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「需要副作用 (寫檔 / 寄 log)」</strong> → <code>purrr::walk</code> 而非 map (明確標示意圖)</span><span data-lang="en"><strong>"Need side effects (write file / log)"</strong> → <code>purrr::walk</code>, not map (signals intent)</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> 下列哪個函式是「純函式」？</p>
+<p data-lang="en"><strong>Q1.</strong> Which of the following is a pure function?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. <code>def add_one(xs): xs.append(0); return [x+1 for x in xs]</code></span><span data-lang="en">A. <code>def add_one(xs): xs.append(0); return [x+1 for x in xs]</code></span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. <code>def now_plus(x): return x + time.time()</code></span><span data-lang="en">B. <code>def now_plus(x): return x + time.time()</code></span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. <code>def normalize(x, mu, sigma): return (x - mu) / sigma</code></span><span data-lang="en">C. <code>def normalize(x, mu, sigma): return (x - mu) / sigma</code></span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. <code>def save_result(x): with open('out.txt','w') as f: f.write(str(x))</code></span><span data-lang="en">D. <code>def save_result(x): with open('out.txt','w') as f: f.write(str(x))</code></span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>A 修改了傳入 list (side effect)；B 依賴當前時間 (非 referential transparent)；D 寫檔案 (side effect)。只有 C 滿足兩條件。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> A mutates the input (side effect); B depends on current time (not referentially transparent); D writes a file (side effect). Only C satisfies both purity conditions.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 對 1000 個樣本跑分析，希望失敗的樣本變成 NA 而不是中斷整批執行——應該用？</p>
+<p data-lang="en"><strong>Q2.</strong> Running analysis on 1000 samples, you want failed samples to become NA instead of halting the batch — use?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. <code>map(samples, run_pipeline)</code> + 在外層 tryCatch</span><span data-lang="en">A. <code>map(samples, run_pipeline)</code> wrapped in outer tryCatch</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. <code>map(samples, possibly(run_pipeline, otherwise = NA))</code></span><span data-lang="en">B. <code>map(samples, possibly(run_pipeline, otherwise = NA))</code></span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. <code>walk(samples, run_pipeline)</code></span><span data-lang="en">C. <code>walk(samples, run_pipeline)</code></span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. <code>reduce(samples, run_pipeline)</code></span><span data-lang="en">D. <code>reduce(samples, run_pipeline)</code></span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong><code>possibly()</code> 把失敗時的回傳值設為 .otherwise，整批繼續執行。A 的 tryCatch 在外層只能 catch 第一個錯誤，後面樣本就不跑了。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> <code>possibly()</code> supplies <code>.otherwise</code> on failure so the batch keeps going. The outer tryCatch in A would catch the first error and skip the rest.</div>
+</div>
+
+<div class="quiz-q" data-correct="D">
+<p data-lang="zh"><strong>Q3.</strong> 關於「不可變性」在 bioinformatics pipeline 的好處，下列何者 <strong>不正確</strong>？</p>
+<p data-lang="en"><strong>Q3.</strong> Which is <strong>NOT</strong> a benefit of immutability in bioinformatics pipelines?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 跨執行緒 / 跨 process 共享資料時安全 (無 race condition)</span><span data-lang="en">A. Safe to share across threads/processes (no race conditions)</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 同一物件可作為 cache (lru_cache / joblib.Memory) 的 key</span><span data-lang="en">B. Object can serve as a cache key (lru_cache / joblib.Memory)</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 函式不會被「action at a distance」式地修改傳入物件</span><span data-lang="en">C. Functions can't silently mutate inputs ("action at a distance")</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 不可變物件總是比可變物件更省記憶體</span><span data-lang="en">D. Immutable objects always use less RAM than mutable ones</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 D。</strong>不可變性常意味著「修改 = 複製新物件」，反而可能 <em>多用</em> 記憶體 (R 的 copy-on-modify 即如此)。A/B/C 才是真正好處。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: D.</strong> Immutability often means "modify = copy" — which can use <em>more</em> memory (R's copy-on-modify is the canonical example). A/B/C are the real benefits.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="advanced-r.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="A2 · 進階 R 與 tidy eval" data-en="A2 · Advanced R & tidy eval">A2 · 進階 R 與 tidy eval</span></a>
+<a href="error-handling-logging.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="A4 · 錯誤處理與結構化日誌" data-en="A4 · Error handling & logging">A4 · 錯誤處理與結構化日誌</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · A3 函數式程式設計</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Interactive: for-loop vs map side-by-side comparison
+const codeSamples = {
+  py: {
+    forLoop:
+`# Imperative for-loop
+counts = []
+for path in sample_paths:
+    n = count_reads(path)
+    counts.append(n)
+
+# To parallelize you must REWRITE
+# the loop with multiprocessing.Pool`,
+    map:
+`# Functional map
+counts = [count_reads(p) for p in sample_paths]
+# or:
+counts = list(map(count_reads, sample_paths))
+
+# To parallelize: just swap map() for
+# pool.map() — same function, no rewrite
+from multiprocessing import Pool
+with Pool(8) as p:
+    counts = p.map(count_reads, sample_paths)`,
+    lines: "Python · 6 vs 2 lines",
+    parallel: "map → drop-in parallel.Pool.map",
+    test: "pure fn → pytest one-liner",
+  },
+  r: {
+    forLoop:
+`# Imperative for-loop
+counts <- integer(length(sample_paths))
+for (i in seq_along(sample_paths)) {
+  counts[i] <- count_reads(sample_paths[i])
+}
+
+# To parallelize: rewrite as
+# parallel::mclapply(...)`,
+    map:
+`# Functional purrr::map
+counts <- map_int(sample_paths, count_reads)
+
+# To parallelize: just swap map_int()
+# for furrr::future_map_int()
+library(furrr); plan(multisession, workers = 8)
+counts <- future_map_int(sample_paths, count_reads)`,
+    lines: "R · 5 vs 1 line",
+    parallel: "purrr::map → furrr::future_map drop-in",
+    test: "pure fn → testthat one-liner",
+  },
+};
+function updateCompare(key){
+  const c = codeSamples[key];
+  document.getElementById('codeFor').textContent = c.forLoop;
+  document.getElementById('codeMap').textContent = c.map;
+  document.getElementById('cmpLines').textContent = c.lines;
+  document.getElementById('cmpParallel').textContent = c.parallel;
+  document.getElementById('cmpTest').textContent = c.test;
+}
+document.querySelectorAll('.lang-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    updateCompare(btn.dataset.langKey);
+  });
+});
+updateCompare('py');
+</script>
+</body></html>

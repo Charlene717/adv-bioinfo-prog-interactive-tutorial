@@ -1,0 +1,665 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>D4: API 與 Web 服務 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK D · TOPIC 16 / 20</div>
+<h1 data-zh="API 與 Web 服務：FastAPI、plumber、Shiny、Streamlit" data-en="API & Web Services: FastAPI, plumber, Shiny, Streamlit">API 與 Web 服務：FastAPI、plumber、Shiny、Streamlit</h1>
+<p class="subtitle" data-lang="zh">什麼時候 CLI 不夠用、需要做成 web service？FastAPI vs Flask、R plumber、Shiny / Streamlit / Dash / gradio、REST vs GraphQL、WebSockets、OpenAPI 自動文件、部署選項。</p>
+<p class="subtitle" data-lang="en">When is a CLI not enough? FastAPI vs Flask, R plumber, Shiny / Streamlit / Dash / gradio, REST vs GraphQL, WebSockets, OpenAPI auto-docs, deployment options.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="CLI 何時不夠用？" data-en="When does a CLI fall short?">CLI 何時不夠用？</h2>
+<div data-lang="zh">
+<p>大多數生醫資訊工具是 CLI (e.g. <code>samtools</code>、<code>scanpy.cli</code>)。CLI 簡單、易組合、適合 batch。但有四種情境 CLI 力不從心：</p>
+<ul>
+<li><strong>互動探索：</strong>濕實驗同事要 click + filter + 重畫 UMAP，不會寫 Python，需要點按鈕的界面。</li>
+<li><strong>跨組共享資料：</strong>三個 lab 想查同一個 variant database，每個 lab 自己跑 CLI 太重複，集中式 API 更合理。</li>
+<li><strong>長時間運算 + 進度回報：</strong>跑 100 個樣本要 2 小時，使用者想看即時 progress bar。</li>
+<li><strong>跟其他系統整合：</strong>EHR / LIMS / Galaxy 想呼叫你的 alignment service。</li>
+</ul>
+<p>本章六個主題：<strong>FastAPI 基礎</strong>、<strong>plumber (R)</strong>、<strong>Dashboard 工具比較</strong>、<strong>REST vs GraphQL</strong>、<strong>WebSockets / SSE</strong>、<strong>部署</strong>。</p>
+</div>
+<div data-lang="en">
+<p>Most bioinformatics tools are CLIs (e.g. <code>samtools</code>, <code>scanpy</code>). CLIs are simple, composable, batch-friendly. But four scenarios outgrow a CLI:</p>
+<ul>
+<li><strong>Interactive exploration:</strong> A wet-lab collaborator wants to click + filter + replot UMAP without writing Python.</li>
+<li><strong>Cross-lab data sharing:</strong> Three labs query the same variant DB — running CLIs locally duplicates effort; a central API is cleaner.</li>
+<li><strong>Long jobs with progress:</strong> A 100-sample run takes 2 hours; users want a live progress bar.</li>
+<li><strong>System integration:</strong> EHR / LIMS / Galaxy needs to call your alignment service.</li>
+</ul>
+<p>The six topics: <strong>FastAPI basics</strong>, <strong>plumber (R)</strong>, <strong>Dashboard tools compared</strong>, <strong>REST vs GraphQL</strong>, <strong>WebSockets / SSE</strong>, <strong>deployment</strong>.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>口訣：</strong>「CLI 給程式用，Web 給人用、給其他服務用。」做之前先問：誰是我的使用者？</span>
+<span data-lang="en"><strong>Mantra:</strong> "CLI for code; Web for humans and other services." Before building: ask who your user is.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: FastAPI ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、FastAPI — Pydantic + 非同步" data-en="I. FastAPI — Pydantic + async">一、FastAPI</h2>
+<div data-lang="zh"><p>FastAPI 是 2025 年 Python 生態最熱門的 API 框架：基於 Pydantic 做 request/response 驗證，原生 async，自動生成 OpenAPI 文件 (即 Swagger UI) 在 <code>/docs</code>，支援 dependency injection 與 BackgroundTasks。</p></div>
+<div data-lang="en"><p>FastAPI is the dominant Python API framework in 2025: Pydantic-based request/response validation, native async, auto-generated OpenAPI docs at <code>/docs</code>, dependency injection, BackgroundTasks.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">main.py</button>
+<button class="code-tab-btn">deps.py</button>
+<button class="code-tab-btn">background.py</button>
+<button class="code-tab-btn">flask.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">main.py — variant lookup API</span><pre><span class="kw">from</span> fastapi <span class="kw">import</span> FastAPI, HTTPException, Query
+<span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, Field
+
+app = FastAPI(title=<span class="str">"variant-svc"</span>, version=<span class="str">"0.1.0"</span>)
+
+<span class="kw">class</span> <span class="cls">Variant</span>(BaseModel):
+    chrom: str = Field(..., pattern=<span class="str">r"^chr[\dXYM]+$"</span>)
+    pos:   int = Field(..., ge=<span class="num">1</span>)
+    ref:   str
+    alt:   str
+    qual:  float | <span class="kw">None</span> = <span class="kw">None</span>
+
+<span class="kw">class</span> <span class="cls">VariantList</span>(BaseModel):
+    gene: str
+    n:    int
+    variants: list[Variant]
+
+<span class="kw">@</span><span class="func">app.get</span>(<span class="str">"/variants/{gene}"</span>, response_model=VariantList)
+<span class="kw">async def</span> <span class="func">list_variants</span>(
+    gene: str,
+    chrom: str | <span class="kw">None</span> = Query(<span class="kw">None</span>, pattern=<span class="str">r"^chr[\dXYM]+$"</span>),
+    limit: int = Query(<span class="num">100</span>, ge=<span class="num">1</span>, le=<span class="num">1000</span>),
+):
+    rows = <span class="kw">await</span> db.fetch_variants(gene, chrom, limit)
+    <span class="kw">if not</span> rows:
+        <span class="kw">raise</span> HTTPException(<span class="num">404</span>, <span class="str">f"No variants for {gene}"</span>)
+    <span class="kw">return</span> VariantList(gene=gene, n=<span class="func">len</span>(rows), variants=rows)
+
+<span class="comment"># Run: uvicorn main:app --reload</span>
+<span class="comment"># Auto docs at http://localhost:8000/docs (Swagger UI) and /redoc</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">deps.py — dependency injection</span><pre><span class="kw">from</span> fastapi <span class="kw">import</span> Depends, Header, HTTPException
+<span class="kw">import</span> asyncpg
+
+<span class="kw">async def</span> <span class="func">get_pool</span>():
+    <span class="kw">if not hasattr</span>(get_pool, <span class="str">"_p"</span>):
+        get_pool._p = <span class="kw">await</span> asyncpg.create_pool(<span class="str">"postgres://..."</span>)
+    <span class="kw">return</span> get_pool._p
+
+<span class="kw">async def</span> <span class="func">require_api_key</span>(x_api_key: str = Header(...)):
+    <span class="kw">if not await</span> verify_key(x_api_key):
+        <span class="kw">raise</span> HTTPException(<span class="num">401</span>, <span class="str">"invalid API key"</span>)
+    <span class="kw">return</span> x_api_key
+
+<span class="kw">@</span><span class="func">app.get</span>(<span class="str">"/admin/stats"</span>)
+<span class="kw">async def</span> <span class="func">stats</span>(pool = Depends(get_pool), _key = Depends(require_api_key)):
+    <span class="kw">async with</span> pool.acquire() <span class="kw">as</span> conn:
+        <span class="kw">return</span> {<span class="str">"n_variants"</span>: <span class="kw">await</span> conn.fetchval(<span class="str">"SELECT count(*) FROM variants"</span>)}
+</pre></div>
+<div class="code-tab-content"><span class="filename">background.py — long-running jobs</span><pre><span class="kw">from</span> fastapi <span class="kw">import</span> BackgroundTasks
+<span class="kw">from</span> uuid <span class="kw">import</span> uuid4
+
+jobs: dict[str, dict] = {}
+
+<span class="kw">def</span> <span class="func">_align_worker</span>(job_id: str, sample: str):
+    jobs[job_id][<span class="str">"status"</span>] = <span class="str">"running"</span>
+    <span class="comment"># ... run minimap2/bwa ...</span>
+    jobs[job_id][<span class="str">"status"</span>] = <span class="str">"done"</span>
+    jobs[job_id][<span class="str">"bam"</span>]    = <span class="str">f"/data/{sample}.bam"</span>
+
+<span class="kw">@</span><span class="func">app.post</span>(<span class="str">"/align"</span>)
+<span class="kw">async def</span> <span class="func">align</span>(sample: str, tasks: BackgroundTasks):
+    job_id = <span class="func">str</span>(uuid4())
+    jobs[job_id] = {<span class="str">"status"</span>: <span class="str">"queued"</span>}
+    tasks.add_task(_align_worker, job_id, sample)
+    <span class="kw">return</span> {<span class="str">"job_id"</span>: job_id}
+
+<span class="kw">@</span><span class="func">app.get</span>(<span class="str">"/align/{job_id}"</span>)
+<span class="kw">async def</span> <span class="func">status</span>(job_id: str):
+    <span class="kw">return</span> jobs.get(job_id, {<span class="str">"error"</span>: <span class="str">"unknown job"</span>})
+
+<span class="comment"># For heavy workloads, swap BackgroundTasks for Celery/Dramatiq/arq + Redis</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">flask.py — small Flask still has a place</span><pre><span class="kw">from</span> flask <span class="kw">import</span> Flask, jsonify, request
+
+app = Flask(__name__)
+
+<span class="kw">@</span><span class="func">app.route</span>(<span class="str">"/gc"</span>, methods=[<span class="str">"POST"</span>])
+<span class="kw">def</span> <span class="func">gc</span>():
+    seq = request.json.get(<span class="str">"seq"</span>, <span class="str">""</span>)
+    gc = <span class="func">sum</span>(<span class="num">1</span> <span class="kw">for</span> c <span class="kw">in</span> seq <span class="kw">if</span> c <span class="kw">in</span> <span class="str">"GCgc"</span>) / <span class="func">len</span>(seq) <span class="kw">if</span> seq <span class="kw">else</span> <span class="num">0</span>
+    <span class="kw">return</span> jsonify({<span class="str">"seq"</span>: seq, <span class="str">"gc"</span>: gc})
+
+<span class="comment"># Flask is fine for: tiny tools, demo apps, sync-only endpoints,</span>
+<span class="comment"># or when team is already Flask-fluent. Use FastAPI for new projects.</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 3: R plumber + Shiny ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、R plumber 與 Shiny" data-en="II. R plumber + Shiny">二、R plumber 與 Shiny</h2>
+<div data-lang="zh"><p>R 對應的 API 框架是 <a href="https://www.rplumber.io"><strong>plumber</strong></a>——用 <code>#*</code> 註解把任何 R 函式變 REST endpoint。對需要互動 dashboard 的場景，R 的 <strong>Shiny</strong> 是黃金標準 (UI + reactive server)。</p></div>
+<div data-lang="en"><p>R's API framework is <a href="https://www.rplumber.io"><strong>plumber</strong></a> — <code>#*</code> annotations turn any R function into a REST endpoint. For interactive dashboards, R's <strong>Shiny</strong> is the gold standard (UI + reactive server).</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">plumber.R</button>
+<button class="code-tab-btn">app.R (Shiny)</button>
+</div>
+<div class="code-tab-content active"><span class="filename">plumber.R</span><pre>library(plumber)
+
+<span class="comment">#* @apiTitle Variant Service (R)</span>
+<span class="comment">#* @apiVersion 0.1.0</span>
+
+<span class="comment">#* List variants in a gene</span>
+<span class="comment">#* @param gene  Gene symbol</span>
+<span class="comment">#* @param chrom Optional chromosome filter</span>
+<span class="comment">#* @param limit Max rows (default 100)</span>
+<span class="comment">#* @get /variants/&lt;gene&gt;</span>
+function(gene, chrom = <span class="kw">NULL</span>, limit = <span class="num">100</span>) {
+  rows &lt;- DBI::dbGetQuery(conn,
+    <span class="str">"SELECT chrom,pos,ref,alt FROM variants WHERE gene=$1 LIMIT $2"</span>,
+    params = list(gene, as.integer(limit)))
+  list(gene = gene, n = nrow(rows), variants = rows)
+}
+
+<span class="comment">#* Compute GC of a sequence</span>
+<span class="comment">#* @param seq DNA sequence</span>
+<span class="comment">#* @post /gc</span>
+function(seq) {
+  bases &lt;- strsplit(seq, <span class="str">""</span>)[[<span class="num">1</span>]]
+  list(seq = seq, gc = mean(bases %in% c(<span class="str">"G"</span>,<span class="str">"C"</span>,<span class="str">"g"</span>,<span class="str">"c"</span>)))
+}
+
+<span class="comment"># Run: plumber::pr("plumber.R") |&gt; plumber::pr_run(port = 8000)</span>
+<span class="comment"># Swagger UI at http://localhost:8000/__docs__/</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">app.R — minimal Shiny QC dashboard</span><pre>library(shiny)
+library(ggplot2)
+library(scqcR)
+
+ui &lt;- fluidPage(
+  titlePanel(<span class="str">"scRNA-seq QC Explorer"</span>),
+  sidebarLayout(
+    sidebarPanel(
+      fileInput(<span class="str">"file"</span>, <span class="str">"Upload .h5ad / .rds"</span>),
+      sliderInput(<span class="str">"min_counts"</span>, <span class="str">"Min counts/cell"</span>,
+                  <span class="num">0</span>, <span class="num">5000</span>, <span class="num">500</span>, step = <span class="num">100</span>),
+      sliderInput(<span class="str">"max_mt"</span>, <span class="str">"Max MT %"</span>, <span class="num">0</span>, <span class="num">100</span>, <span class="num">10</span>)
+    ),
+    mainPanel(
+      plotOutput(<span class="str">"qcPlot"</span>),
+      verbatimTextOutput(<span class="str">"stats"</span>)
+    )
+  )
+)
+
+server &lt;- function(input, output) {
+  sce &lt;- reactive({ req(input$file); read_sce(input$file$datapath) })
+  filtered &lt;- reactive({
+    filter_cells(sce(), min_counts = input$min_counts, max_mt = input$max_mt)
+  })
+  output$qcPlot &lt;- renderPlot({
+    ggplot(as.data.frame(colData(filtered())),
+           aes(total_counts, pct_mt)) + geom_point(alpha = .4)
+  })
+  output$stats &lt;- renderPrint({
+    sprintf(<span class="str">"%d cells pass / %d total"</span>, ncol(filtered()), ncol(sce()))
+  })
+}
+
+shinyApp(ui, server)
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: Dashboards compared ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、Dashboard 工具：Streamlit / Dash / gradio / Shiny" data-en="III. Dashboards: Streamlit / Dash / gradio / Shiny">三、Dashboard 工具比較</h2>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="工具" data-en="Tool">工具</th>
+<th data-zh="語言" data-en="Language">語言</th>
+<th data-zh="開發速度" data-en="Dev speed">開發速度</th>
+<th data-zh="客製化深度" data-en="Customisation">客製化</th>
+<th data-zh="最強場景" data-en="Best at">最強場景</th>
+</tr></thead><tbody>
+<tr><td><strong>Streamlit</strong></td><td>Python</td><td data-zh="最快" data-en="Fastest">最快</td><td data-zh="中" data-en="Medium">中</td><td data-zh="prototyping、簡報 demo" data-en="Prototyping, demos">prototyping、demo</td></tr>
+<tr><td><strong>Dash (Plotly)</strong></td><td>Python</td><td data-zh="中" data-en="Medium">中</td><td data-zh="高 (React 為底)" data-en="High (React-based)">高</td><td data-zh="互動 Plotly 圖、企業 dashboard" data-en="Plotly-heavy enterprise dashboards">Plotly-heavy 企業 dashboard</td></tr>
+<tr><td><strong>gradio</strong></td><td>Python</td><td data-zh="最快" data-en="Fastest">最快</td><td data-zh="低" data-en="Low">低</td><td data-zh="ML model demos、HuggingFace Spaces" data-en="ML demos, HuggingFace Spaces">ML demos</td></tr>
+<tr><td><strong>Shiny</strong></td><td>R / Python</td><td data-zh="中" data-en="Medium">中</td><td data-zh="高 (reactive 模型)" data-en="High (reactive model)">高</td><td data-zh="R 使用者、複雜 reactive UI" data-en="R users, complex reactive UI">R 使用者、複雜 reactive</td></tr>
+<tr><td><strong>Panel / Holoviz</strong></td><td>Python</td><td data-zh="中" data-en="Medium">中</td><td data-zh="高" data-en="High">高</td><td data-zh="科學 dashboard、Jupyter 整合" data-en="Scientific dashboards, Jupyter">科學 dashboard</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">streamlit_app.py</button>
+<button class="code-tab-btn">gradio_app.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">streamlit_app.py</span><pre><span class="kw">import</span> streamlit <span class="kw">as</span> st
+<span class="kw">import</span> scanpy <span class="kw">as</span> sc, matplotlib.pyplot <span class="kw">as</span> plt
+
+st.title(<span class="str">"scRNA-seq QC Explorer"</span>)
+f = st.file_uploader(<span class="str">"Upload .h5ad"</span>, type=[<span class="str">"h5ad"</span>])
+<span class="kw">if</span> f:
+    adata = sc.read_h5ad(f)
+    mc = st.sidebar.slider(<span class="str">"Min counts/cell"</span>, <span class="num">0</span>, <span class="num">5000</span>, <span class="num">500</span>)
+    mm = st.sidebar.slider(<span class="str">"Max MT %"</span>, <span class="num">0</span>, <span class="num">100</span>, <span class="num">10</span>)
+    keep = (adata.obs.total_counts &gt;= mc) &amp; (adata.obs.pct_counts_mt &lt;= mm)
+    st.write(<span class="str">f"**{keep.sum()}** cells pass / {adata.n_obs} total"</span>)
+    fig, ax = plt.subplots()
+    ax.scatter(adata.obs.total_counts[keep],
+               adata.obs.pct_counts_mt[keep], alpha=<span class="num">0.4</span>, s=<span class="num">4</span>)
+    st.pyplot(fig)
+
+<span class="comment"># Run: streamlit run streamlit_app.py</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">gradio_app.py — quickest ML demo</span><pre><span class="kw">import</span> gradio <span class="kw">as</span> gr
+<span class="kw">from</span> mymodel <span class="kw">import</span> predict_pathogenicity
+
+<span class="kw">def</span> <span class="func">predict</span>(seq: str, ref: str, alt: str) -&gt; dict:
+    score = predict_pathogenicity(seq, ref, alt)
+    <span class="kw">return</span> {<span class="str">"benign"</span>: <span class="num">1</span>-score, <span class="str">"pathogenic"</span>: score}
+
+demo = gr.Interface(
+    fn=predict,
+    inputs=[gr.Textbox(label=<span class="str">"Flank sequence"</span>),
+            gr.Textbox(label=<span class="str">"Ref allele"</span>),
+            gr.Textbox(label=<span class="str">"Alt allele"</span>)],
+    outputs=gr.Label(num_top_classes=<span class="num">2</span>),
+    title=<span class="str">"Variant pathogenicity predictor"</span>,
+    examples=[[<span class="str">"ACGTACGT"</span>, <span class="str">"A"</span>, <span class="str">"G"</span>]],
+)
+demo.launch()    <span class="comment"># gradio share=True → public temporary URL</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: REST vs GraphQL vs WebSocket/SSE ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="四、REST vs GraphQL；WebSockets vs SSE" data-en="IV. REST vs GraphQL; WebSockets vs SSE">四、協定選擇</h2>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="協定" data-en="Protocol">協定</th>
+<th data-zh="方向" data-en="Direction">方向</th>
+<th data-zh="格式" data-en="Format">格式</th>
+<th data-zh="生醫適用情境" data-en="Bioinformatics fit">生醫適用</th>
+</tr></thead><tbody>
+<tr><td><strong>REST</strong></td><td data-zh="client → server (一次)" data-en="client → server (one-shot)">client → server</td><td>JSON</td><td data-zh="變異查詢、樣本清單、靜態 metadata" data-en="Variant lookup, sample list, static metadata">變異查詢、樣本清單</td></tr>
+<tr><td><strong>GraphQL</strong></td><td data-zh="client → server (一次但客製欄位)" data-en="client → server (one-shot, custom fields)">client → server</td><td>JSON</td><td data-zh="複雜關聯 (sample→variants→annotations)" data-en="Deep relations (sample→variants→annotations)">複雜關聯查詢</td></tr>
+<tr><td><strong>WebSocket</strong></td><td data-zh="雙向、長連線" data-en="Bi-directional, persistent">雙向長連線</td><td data-zh="JSON/binary" data-en="JSON/binary">JSON/binary</td><td data-zh="即時 collab UI、live cluster 顯示" data-en="Collab UI, live cluster updates">即時 collab UI</td></tr>
+<tr><td><strong>SSE</strong></td><td data-zh="server → client (單向 stream)" data-en="server → client (one-way stream)">單向 stream</td><td data-zh="text/event-stream" data-en="text/event-stream">text/event-stream</td><td data-zh="long-running job 的 progress bar" data-en="Long-job progress bars">job progress bar</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">graphql.py</button>
+<button class="code-tab-btn">sse.py</button>
+<button class="code-tab-btn">websocket.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">graphql.py — Strawberry on FastAPI</span><pre><span class="kw">import</span> strawberry
+<span class="kw">from</span> strawberry.fastapi <span class="kw">import</span> GraphQLRouter
+
+<span class="kw">@</span><span class="func">strawberry.type</span>
+<span class="kw">class</span> <span class="cls">Variant</span>:
+    chrom: str; pos: int; ref: str; alt: str
+
+<span class="kw">@</span><span class="func">strawberry.type</span>
+<span class="kw">class</span> <span class="cls">Sample</span>:
+    id: str
+    variants: list[Variant]
+
+<span class="kw">@</span><span class="func">strawberry.type</span>
+<span class="kw">class</span> <span class="cls">Query</span>:
+    <span class="kw">@</span><span class="func">strawberry.field</span>
+    <span class="kw">def</span> <span class="func">sample</span>(self, id: str) -&gt; Sample:
+        ...
+
+schema = strawberry.Schema(query=Query)
+app.include_router(GraphQLRouter(schema), prefix=<span class="str">"/graphql"</span>)
+
+<span class="comment"># Client requests ONLY the fields it needs:</span>
+<span class="comment"># query { sample(id: "S1") { id variants { chrom pos } } }</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">sse.py — server-sent events for progress</span><pre><span class="kw">from</span> fastapi.responses <span class="kw">import</span> StreamingResponse
+<span class="kw">import</span> asyncio, json
+
+<span class="kw">@</span><span class="func">app.get</span>(<span class="str">"/align/{job_id}/stream"</span>)
+<span class="kw">async def</span> <span class="func">stream</span>(job_id: str):
+    <span class="kw">async def</span> <span class="func">events</span>():
+        <span class="kw">while</span> jobs[job_id][<span class="str">"status"</span>] != <span class="str">"done"</span>:
+            payload = json.dumps({
+                <span class="str">"status"</span>: jobs[job_id][<span class="str">"status"</span>],
+                <span class="str">"progress"</span>: jobs[job_id].get(<span class="str">"pct"</span>, <span class="num">0</span>)
+            })
+            <span class="kw">yield</span> <span class="str">f"data: {payload}\n\n"</span>
+            <span class="kw">await</span> asyncio.sleep(<span class="num">1</span>)
+        <span class="kw">yield</span> <span class="str">f"data: {{\"status\":\"done\"}}\n\n"</span>
+    <span class="kw">return</span> StreamingResponse(events(), media_type=<span class="str">"text/event-stream"</span>)
+
+<span class="comment"># Browser: const es = new EventSource('/align/abc/stream');</span>
+<span class="comment">#          es.onmessage = e =&gt; updateProgressBar(JSON.parse(e.data));</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">websocket.py — bi-directional</span><pre><span class="kw">from</span> fastapi <span class="kw">import</span> WebSocket
+
+<span class="kw">@</span><span class="func">app.websocket</span>(<span class="str">"/cluster/live"</span>)
+<span class="kw">async def</span> <span class="func">cluster_ws</span>(ws: WebSocket):
+    <span class="kw">await</span> ws.accept()
+    <span class="kw">try</span>:
+        <span class="kw">while True</span>:
+            msg = <span class="kw">await</span> ws.receive_json()
+            <span class="kw">if</span> msg[<span class="str">"action"</span>] == <span class="str">"recluster"</span>:
+                result = <span class="kw">await</span> recluster(msg[<span class="str">"resolution"</span>])
+                <span class="kw">await</span> ws.send_json({<span class="str">"clusters"</span>: result})
+    <span class="kw">except</span> Exception:
+        <span class="kw">await</span> ws.close()
+
+<span class="comment"># Use when both sides need to push updates (e.g. multi-user dashboard).</span>
+<span class="comment"># For one-way progress, prefer SSE — simpler and HTTP-friendly.</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: Interactive endpoint generator ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 5" data-en="TOPIC 5">主題 5</div>
+<h2 data-zh="五、REST endpoint 生成器" data-en="V. REST endpoint generator">五、REST endpoint 生成器</h2>
+<div data-lang="zh"><p>選一個情境，看 FastAPI 與 plumber 的對應寫法並排。</p></div>
+<div data-lang="en"><p>Pick a scenario; see the matching FastAPI and plumber code side by side.</p></div>
+
+<div class="interactive-panel">
+<h3 data-zh="挑一個 endpoint" data-en="Pick an endpoint">挑一個 endpoint</h3>
+<div class="sim-controls" style="display:flex;flex-wrap:wrap;gap:.5rem;margin:.5rem 0">
+  <button class="ep-btn" data-ep="variants">GET /variants/{gene}</button>
+  <button class="ep-btn" data-ep="cluster">POST /cells/cluster</button>
+  <button class="ep-btn" data-ep="qc">POST /qc/run</button>
+  <button class="ep-btn" data-ep="search">GET /samples/search</button>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-top:.4rem">
+  <div>
+    <div style="font-weight:600;font-size:.85rem;margin-bottom:.2rem">FastAPI (Python)</div>
+    <pre id="epPy" style="background:#0f172a;color:#e2e8f0;padding:.7rem;border-radius:6px;font-size:.78rem;min-height:200px;overflow:auto"></pre>
+  </div>
+  <div>
+    <div style="font-weight:600;font-size:.85rem;margin-bottom:.2rem">plumber (R)</div>
+    <pre id="epR" style="background:#0f172a;color:#e2e8f0;padding:.7rem;border-radius:6px;font-size:.78rem;min-height:200px;overflow:auto"></pre>
+  </div>
+</div>
+<div class="sim-stats">
+  <span class="sim-stat info" id="epNote">note: —</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 7: Deployment ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 6" data-en="TOPIC 6">主題 6</div>
+<h2 data-zh="六、部署：uvicorn / gunicorn、Shiny Server、serverless" data-en="VI. Deploy: uvicorn / gunicorn, Shiny Server, serverless">六、部署</h2>
+<div data-lang="zh">
+<p>本機 <code>uvicorn --reload</code> 不適合生產——生產用 <code>gunicorn + uvicorn worker</code> + reverse proxy (nginx/Caddy)，或 <code>hypercorn</code>。R Shiny 用 shinyapps.io (免費) / Posit Connect (企業) / <strong>shinylive</strong> (透過 WebR 直接跑在瀏覽器，無伺服器)。serverless 選項：AWS Lambda、Google Cloud Run、Modal、fly.io、Hugging Face Spaces。</p>
+</div>
+<div data-lang="en">
+<p>Local <code>uvicorn --reload</code> isn't production-grade — for prod use <code>gunicorn + uvicorn worker</code> + reverse proxy (nginx/Caddy), or <code>hypercorn</code>. Shiny: shinyapps.io (free) / Posit Connect (enterprise) / <strong>shinylive</strong> (runs entirely in-browser via WebR, no server). Serverless: AWS Lambda, Google Cloud Run, Modal, fly.io, Hugging Face Spaces.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">prod.sh</button>
+<button class="code-tab-btn">nginx.conf</button>
+<button class="code-tab-btn">shinylive.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">prod.sh — gunicorn + uvicorn workers</span><pre><span class="comment"># Production-grade FastAPI server</span>
+gunicorn main:app \
+  --workers 4 \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --bind 0.0.0.0:8000 \
+  --timeout 60 \
+  --access-logfile - --error-logfile -
+
+<span class="comment"># Rule of thumb: workers = 2 × CPU_cores + 1</span>
+<span class="comment"># For mostly-async workloads with one worker: just plain uvicorn:</span>
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
+</pre></div>
+<div class="code-tab-content"><span class="filename">nginx.conf — TLS reverse proxy</span><pre>server {
+    listen 443 ssl http2;
+    server_name variants.lab.org;
+    ssl_certificate     /etc/letsencrypt/live/variants.lab.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/variants.lab.org/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;       <span class="comment"># for WebSockets</span>
+        proxy_set_header Connection <span class="str">"upgrade"</span>;
+        proxy_read_timeout 600s;
+    }
+}
+</pre></div>
+<div class="code-tab-content"><span class="filename">shinylive.sh — Shiny in the browser (no server)</span><pre><span class="comment"># shinylive packages a Shiny app as static files served from any host.</span>
+<span class="comment"># R code runs in the browser via WebR (R compiled to WebAssembly).</span>
+<span class="comment"># Zero servers, zero cost — great for educational demos.</span>
+
+R -e <span class="str">'install.packages("shinylive")'</span>
+R -e <span class="str">'shinylive::export(appdir = "myapp", destdir = "site")'</span>
+
+<span class="comment"># Push site/ to GitHub Pages / Cloudflare Pages / Netlify</span>
+<span class="comment"># Limitations: large datasets are slow; some packages don't compile to wasm.</span>
+
+<span class="comment"># Python equivalents:</span>
+<span class="comment">#   - PyScript / pyodide</span>
+<span class="comment">#   - shiny for Python with shinylive</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 8: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個 web 工具？" data-en="Which web tool do I need?">該用哪個 web 工具？</h2>
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「Python REST API，要驗證 + 自動文件」</strong> → FastAPI</span><span data-lang="en"><strong>"Python REST API with validation + auto docs"</strong> → FastAPI</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「R 函式變 REST」</strong> → plumber (用 <code>#*</code> 註解)</span><span data-lang="en"><strong>"Turn R functions into REST"</strong> → plumber (with <code>#*</code> annotations)</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「給 wet-lab 點按鈕的 dashboard」</strong> → Shiny (R 強)；Streamlit (Python 最快做)；Dash (Plotly 重)</span><span data-lang="en"><strong>"Click-button dashboard for wet-lab"</strong> → Shiny (R native); Streamlit (fastest Python); Dash (Plotly-heavy)</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「ML 模型 demo」</strong> → gradio + HuggingFace Spaces (5 分鐘上線)</span><span data-lang="en"><strong>"Demo an ML model"</strong> → gradio + HuggingFace Spaces (5-min deploy)</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「長時間任務要 progress bar」</strong> → SSE (單向) 或 WebSocket (雙向)</span><span data-lang="en"><strong>"Progress bar for long job"</strong> → SSE (one-way) or WebSocket (bi-directional)</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「教學 demo 不想養伺服器」</strong> → shinylive (R) / pyodide (Python) — 完全在瀏覽器跑</span><span data-lang="en"><strong>"Teaching demo with no server"</strong> → shinylive (R) / pyodide (Python) — runs in browser</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> FastAPI 相對於 Flask 的主要優點？</p>
+<p data-lang="en"><strong>Q1.</strong> Main advantage of FastAPI over Flask?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. Flask 不能寫 REST API</span><span data-lang="en">A. Flask can't build REST APIs</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. FastAPI 用 SQL 比較快</span><span data-lang="en">B. FastAPI runs SQL faster</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. Pydantic 自動驗證 + 自動 OpenAPI 文件 + 原生 async</span><span data-lang="en">C. Pydantic validation + auto OpenAPI docs + native async</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. FastAPI 不需要 uvicorn</span><span data-lang="en">D. FastAPI doesn't need uvicorn</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Flask 仍然好用（特別是小工具、團隊已熟悉），但新專案建議 FastAPI 是因為三件事：Pydantic 自動驗證 request/response、Swagger 文件免費送、async/await 支援高並發 I/O。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Flask remains fine for small tools or teams already fluent in it; new projects favour FastAPI for three reasons: Pydantic auto-validates payloads, Swagger docs come free, and native async handles high-concurrency I/O.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 想給 wet-lab 同事一個能 click + filter + 拉 slider 的 R 介面，最直接的選擇？</p>
+<p data-lang="en"><strong>Q2.</strong> Most direct choice for a click + filter + slider UI for wet-lab colleagues in R?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 用 plumber 開 REST API</span><span data-lang="en">A. Build a REST API with plumber</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. Shiny (reactive UI + server)</span><span data-lang="en">B. Shiny (reactive UI + server)</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 寫一個 CLI 加 prompt</span><span data-lang="en">C. Write a CLI with prompts</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 把分析寫成 Rmarkdown 寄給他們</span><span data-lang="en">D. Email them an Rmarkdown</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>Shiny 是 R 生態的標準 dashboard 工具，reactive 模型讓 input 改變自動觸發 plot 重畫；plumber 是給「程式呼叫」的 REST API；CLI/Rmd 沒有互動 UI。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> Shiny is R's canonical dashboard tool; its reactive model auto-redraws plots when inputs change. plumber is a REST API for other programs to call. CLI/Rmd lack interactive UI.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> 100 樣本的 alignment job 跑 2 小時，前端想看即時進度。最簡單合適的協定？</p>
+<p data-lang="en"><strong>Q3.</strong> 100-sample alignment job runs 2 hours; UI needs live progress. Simplest fitting protocol?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. Server-Sent Events (SSE) — 單向 stream，HTTP 友善</span><span data-lang="en">A. Server-Sent Events (SSE) — one-way stream, HTTP-friendly</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 每 5 秒 GET 一次 status (polling)</span><span data-lang="en">B. Poll status every 5s</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 用 GraphQL subscription</span><span data-lang="en">C. GraphQL subscription</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 用 email 通知</span><span data-lang="en">D. Email when done</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>SSE 是 server → client 的單向 stream，跑在普通 HTTP 上 (穿透 firewall/反向 proxy 容易)，瀏覽器內建 <code>EventSource</code> API。WebSocket 也可以但通常是「需要雙向」才用。Polling 浪費資源；email 不算即時。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> SSE is a one-way server-to-client stream over plain HTTP (passes firewalls/proxies easily) with built-in browser <code>EventSource</code>. WebSocket also works but is overkill for one-way; polling wastes resources; email isn't real-time.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="package-development.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="D3 · 套件開發與發布" data-en="D3 · Package Development">D3 · 套件開發與發布</span></a>
+<a href="docker-containers.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="E1 · Docker 容器" data-en="E1 · Docker Containers">E1 · Docker 容器</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · D4 API 與 Web 服務</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Interactive: endpoint generator
+const endpoints = {
+  variants: {
+    py: `@app.get("/variants/{gene}", response_model=VariantList)
+async def list_variants(
+    gene: str,
+    chrom: str | None = Query(None, pattern=r"^chr[\\dXYM]+$"),
+    limit: int = Query(100, ge=1, le=1000),
+):
+    rows = await db.fetch_variants(gene, chrom, limit)
+    if not rows:
+        raise HTTPException(404, f"No variants for {gene}")
+    return VariantList(gene=gene, n=len(rows), variants=rows)`,
+    r: `#* List variants for a gene
+#* @param gene Gene symbol
+#* @param chrom Optional chromosome filter
+#* @param limit Max rows (default 100)
+#* @get /variants/<gene>
+function(gene, chrom = NULL, limit = 100) {
+  rows <- DBI::dbGetQuery(conn,
+    "SELECT chrom,pos,ref,alt FROM variants
+     WHERE gene = $1 LIMIT $2",
+    params = list(gene, as.integer(limit)))
+  list(gene = gene, n = nrow(rows), variants = rows)
+}`,
+    note: 'note: GET + path param + query params; both auto-document the route'
+  },
+  cluster: {
+    py: `class ClusterReq(BaseModel):
+    cells: list[str]
+    resolution: float = Field(0.5, ge=0.1, le=3.0)
+
+@app.post("/cells/cluster")
+async def cluster(req: ClusterReq):
+    labels = await run_leiden(req.cells, req.resolution)
+    return {"n_clusters": len(set(labels)), "labels": labels}`,
+    r: `#* Cluster cells with Leiden
+#* @param cells:[character] Cell barcodes
+#* @param resolution:numeric Resolution (default 0.5)
+#* @post /cells/cluster
+function(cells, resolution = 0.5) {
+  stopifnot(resolution >= 0.1, resolution <= 3.0)
+  labels <- run_leiden(cells, resolution)
+  list(n_clusters = length(unique(labels)),
+       labels = labels)
+}`,
+    note: 'note: POST with body JSON; Pydantic constrains resolution to [0.1, 3.0]'
+  },
+  qc: {
+    py: `class QCRequest(BaseModel):
+    sample_id: str
+    min_counts: int = 500
+    max_mt_pct: float = 10.0
+
+@app.post("/qc/run")
+async def qc_run(req: QCRequest, tasks: BackgroundTasks):
+    job_id = str(uuid4())
+    jobs[job_id] = {"status": "queued"}
+    tasks.add_task(_run_qc, job_id, req)
+    return {"job_id": job_id, "poll": f"/qc/{job_id}"}`,
+    r: `#* Trigger QC pipeline (returns job_id)
+#* @param sample_id:character
+#* @param min_counts:integer default 500
+#* @param max_mt_pct:numeric default 10
+#* @post /qc/run
+function(sample_id, min_counts = 500, max_mt_pct = 10) {
+  job_id <- uuid::UUIDgenerate()
+  jobs[[job_id]] <<- list(status = "queued")
+  future::future(run_qc(job_id, sample_id,
+                        min_counts, max_mt_pct))
+  list(job_id = job_id, poll = paste0("/qc/", job_id))
+}`,
+    note: 'note: returns immediately with job_id; poll or subscribe for progress'
+  },
+  search: {
+    py: `@app.get("/samples/search")
+async def search_samples(
+    q: str = Query(..., min_length=2),
+    tissue: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=200),
+):
+    rows = await db.search(q, tissue, page, size)
+    return {"page": page, "size": size, "results": rows}`,
+    r: `#* Full-text search samples
+#* @param q Query string (min 2 chars)
+#* @param tissue Optional tissue filter
+#* @param page Page number (default 1)
+#* @param size Page size (default 20, max 200)
+#* @get /samples/search
+function(q, tissue = NULL, page = 1, size = 20) {
+  stopifnot(nchar(q) >= 2, page >= 1, size >= 1, size <= 200)
+  rows <- db_search(q, tissue, page, size)
+  list(page = page, size = size, results = rows)
+}`,
+    note: 'note: pagination + free-text query — typical search endpoint shape'
+  }
+};
+
+document.querySelectorAll('.ep-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const ep = endpoints[btn.dataset.ep];
+    document.getElementById('epPy').textContent = ep.py;
+    document.getElementById('epR').textContent  = ep.r;
+    document.getElementById('epNote').textContent = ep.note;
+  });
+});
+document.querySelector('.ep-btn[data-ep="variants"]').click();
+</script>
+</body></html>

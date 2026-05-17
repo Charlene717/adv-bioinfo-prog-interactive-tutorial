@@ -1,0 +1,459 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>B2: 向量化與編譯加速 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK B · TOPIC 6 / 20</div>
+<h1 data-zh="向量化與編譯加速：把 hot loop 變成原生速度" data-en="Vectorization & Compiled Speedup: Native Speed for Hot Loops">向量化與編譯加速：把 hot loop 變成原生速度</h1>
+<p class="subtitle" data-lang="zh">NumPy 向量化、Numba JIT、Cython、Rcpp、data.table——把熱迴圈從 Python/R 解譯器的牢籠裡解救出來。</p>
+<p class="subtitle" data-lang="en">NumPy vectorization, Numba JIT, Cython, Rcpp, data.table — free your hot loops from the Python / R interpreter cage.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="原理" data-en="WHY">原理</div>
+<h2 data-zh="為什麼 Python / R 的迴圈這麼慢？" data-en="Why are Python / R loops so slow?">為什麼 Python / R 的迴圈這麼慢？</h2>
+<div data-lang="zh">
+<p>純 Python 的 <code>for i in range(N):</code> 每次迭代都要：(1) 解譯 bytecode，(2) 處理 reference count，(3) 把每個整數包成 <code>PyObject</code>（24 bytes 起跳）。一個對 1 億元素做加法的 loop，純 Python ≈ 20 秒，NumPy ≈ 0.1 秒，Numba JIT ≈ 0.05 秒，C ≈ 0.04 秒。</p>
+<p>解套方法可分成兩類：</p>
+<ul>
+<li><strong>向量化 (vectorize)：</strong>用 NumPy / data.table / 矩陣運算把 loop 推給底層 C/Fortran/BLAS。</li>
+<li><strong>編譯 (compile)：</strong>把 Python/R 程式碼編成機器碼——Numba 用 LLVM，Cython 走 C 編譯器，Rcpp 直接編 C++。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p>A plain Python <code>for i in range(N):</code> pays three taxes per iteration: (1) interpreting bytecode, (2) reference-count bookkeeping, (3) boxing each int into a <code>PyObject</code> (24 bytes minimum). For adding 100M numbers: pure Python ≈ 20s, NumPy ≈ 0.1s, Numba JIT ≈ 0.05s, C ≈ 0.04s.</p>
+<p>Two strategies:</p>
+<ul>
+<li><strong>Vectorize:</strong> Push the loop down to C / Fortran / BLAS via NumPy / data.table / matrix ops.</li>
+<li><strong>Compile:</strong> Translate Python/R into machine code — Numba uses LLVM, Cython invokes a C compiler, Rcpp compiles C++ directly.</li>
+</ul>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>嘗試順序：</strong>向量化 → Numba <code>@njit</code> → 平行化（Block B3）→ Cython / Rcpp / C 擴充。每往下一階複雜度都顯著上升，加速比卻只是「再快幾倍」。多數時候停在 Numba 就夠。</span>
+<span data-lang="en"><strong>Try-order:</strong> Vectorize → Numba <code>@njit</code> → parallelize (B3) → Cython / Rcpp / C. Each step adds significant complexity but only modest extra speedup. Most projects stop at Numba.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: NumPy vectorization ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、NumPy 向量化：第一道防線" data-en="I. NumPy Vectorization: The First Line of Defense">一、NumPy 向量化：第一道防線</h2>
+<div data-lang="zh"><p>絕大多數「Python 太慢」其實是「沒向量化」。常見技巧：用 broadcasting 取代外層迴圈，用 <code>np.where</code> / boolean masking 取代 if，用 <code>np.einsum</code> / <code>@</code> 做矩陣運算，用 <code>np.add.reduceat</code> 做 segmented sum。</p></div>
+<div data-lang="en"><p>"Python is slow" usually means "not vectorized." Common moves: broadcasting instead of outer loops, <code>np.where</code>/boolean masks instead of <code>if</code>, <code>np.einsum</code>/<code>@</code> for matrix products, <code>np.add.reduceat</code> for segmented sums.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">slow.py</button>
+<button class="code-tab-btn">fast.py</button>
+<button class="code-tab-btn">advanced.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">slow.py — 2.4 s on 1M cells</span><pre><span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">def</span> <span class="func">cpm_loop</span>(counts: np.ndarray) -&gt; np.ndarray:
+    <span class="str">"""Counts-per-million normalization, naive."""</span>
+    n_cells, n_genes = counts.shape
+    out = np.zeros_like(counts, dtype=np.float32)
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="func">range</span>(n_cells):
+        total = <span class="num">0</span>
+        <span class="kw">for</span> j <span class="kw">in</span> <span class="func">range</span>(n_genes):
+            total += counts[i, j]
+        <span class="kw">for</span> j <span class="kw">in</span> <span class="func">range</span>(n_genes):
+            out[i, j] = counts[i, j] / total * <span class="num">1e6</span>
+    <span class="kw">return</span> out
+</pre></div>
+<div class="code-tab-content"><span class="filename">fast.py — 12 ms on the same matrix (200× faster)</span><pre><span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">def</span> <span class="func">cpm</span>(counts: np.ndarray) -&gt; np.ndarray:
+    totals = counts.sum(axis=<span class="num">1</span>, keepdims=<span class="kw">True</span>)   <span class="comment"># shape (n,1)</span>
+    <span class="kw">return</span> (counts / totals * <span class="num">1e6</span>).astype(np.float32)
+
+<span class="comment"># Key tricks:</span>
+<span class="comment"># - sum(axis=1, keepdims=True) gives (n,1) which broadcasts over (n,m)</span>
+<span class="comment"># - everything runs in C; no Python-level loop</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">advanced.py — einsum + reduceat</span><pre><span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="comment"># Gene × sample correlation, vectorized</span>
+<span class="kw">def</span> <span class="func">gene_gene_corr</span>(X: np.ndarray) -&gt; np.ndarray:
+    Xc = X - X.mean(axis=<span class="num">1</span>, keepdims=<span class="kw">True</span>)
+    norms = np.linalg.norm(Xc, axis=<span class="num">1</span>, keepdims=<span class="kw">True</span>)
+    Xn = Xc / norms
+    <span class="kw">return</span> Xn @ Xn.T              <span class="comment"># BLAS gemm under the hood</span>
+
+<span class="comment"># Segmented sum: aggregate read counts per gene window</span>
+<span class="kw">def</span> <span class="func">window_counts</span>(positions: np.ndarray, bin_edges: np.ndarray):
+    idx = np.searchsorted(bin_edges, positions)
+    <span class="kw">return</span> np.bincount(idx, minlength=<span class="func">len</span>(bin_edges))
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>陷阱：</strong>不要把 NumPy array 用 Python loop 走訪——那等於失去向量化。<code>for x in arr: ...</code> 比 <code>for x in arr.tolist(): ...</code> 還慢，因為每次都要做 unboxing。</span>
+<span data-lang="en"><strong>Pitfall:</strong> Don't iterate a NumPy array with a Python loop — you've lost the vectorization. <code>for x in arr: ...</code> is even slower than <code>for x in arr.tolist(): ...</code> because each step unboxes a scalar.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: Numba ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、Numba：一個 decorator 換 50–200× 速度" data-en="II. Numba: 50–200× Speedup from One Decorator">二、Numba：一個 decorator 換 50–200× 速度</h2>
+<div data-lang="zh"><p>Numba 透過 LLVM 把 Python 函式 JIT 編譯成機器碼。對純數值迴圈（k-mer counting、edit distance、smith-waterman 內層）通常能取得 50–200× 加速；加 <code>parallel=True</code> 可再乘上核心數。</p></div>
+<div data-lang="en"><p>Numba JIT-compiles Python functions to machine code via LLVM. For pure-numeric loops (k-mer counting, edit distance, Smith-Waterman inner loops) it typically achieves 50–200× speedup; <code>parallel=True</code> multiplies by core count.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">njit.py</button>
+<button class="code-tab-btn">parallel.py</button>
+<button class="code-tab-btn">vectorize.py</button>
+<button class="code-tab-btn">caveats.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">njit.py — k-mer counting</span><pre><span class="kw">from</span> numba <span class="kw">import</span> njit
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">@</span><span class="func">njit</span>(cache=<span class="kw">True</span>)   <span class="comment"># 'n'o-Python mode; cache compiled binary to disk</span>
+<span class="kw">def</span> <span class="func">count_kmers</span>(seq: np.ndarray, k: int) -&gt; np.ndarray:
+    <span class="str">"""seq is uint8 (A=0,C=1,G=2,T=3); returns 4**k length array."""</span>
+    n_kmers = <span class="num">4</span> ** k
+    counts = np.zeros(n_kmers, dtype=np.int64)
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="func">range</span>(<span class="func">len</span>(seq) - k + <span class="num">1</span>):
+        idx = <span class="num">0</span>
+        <span class="kw">for</span> j <span class="kw">in</span> <span class="func">range</span>(k):
+            idx = idx * <span class="num">4</span> + seq[i + j]
+        counts[idx] += <span class="num">1</span>
+    <span class="kw">return</span> counts
+
+<span class="comment"># Pure-Python: ~14 s for 1M bp, k=6</span>
+<span class="comment"># Numba njit: ~80 ms — 175× faster</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">parallel.py — parallel=True over rows</span><pre><span class="kw">from</span> numba <span class="kw">import</span> njit, prange
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">@</span><span class="func">njit</span>(parallel=<span class="kw">True</span>, fastmath=<span class="kw">True</span>, cache=<span class="kw">True</span>)
+<span class="kw">def</span> <span class="func">pairwise_euclidean</span>(X: np.ndarray) -&gt; np.ndarray:
+    n, d = X.shape
+    D = np.zeros((n, n))
+    <span class="kw">for</span> i <span class="kw">in</span> prange(n):                    <span class="comment"># parallel range</span>
+        <span class="kw">for</span> j <span class="kw">in</span> <span class="func">range</span>(i + <span class="num">1</span>, n):
+            s = <span class="num">0.0</span>
+            <span class="kw">for</span> k <span class="kw">in</span> <span class="func">range</span>(d):
+                diff = X[i, k] - X[j, k]
+                s += diff * diff
+            D[i, j] = D[j, i] = np.sqrt(s)
+    <span class="kw">return</span> D
+<span class="comment"># 8-core machine: ~7× extra on top of njit (not full 8× due to overhead)</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">vectorize.py — element-wise ufunc</span><pre><span class="kw">from</span> numba <span class="kw">import</span> vectorize, float32, float64
+
+<span class="kw">@</span><span class="func">vectorize</span>([float32(float32), float64(float64)], target=<span class="str">"parallel"</span>)
+<span class="kw">def</span> <span class="func">phred_to_prob</span>(q):
+    <span class="kw">return</span> <span class="num">10.0</span> ** (-q / <span class="num">10.0</span>)
+
+<span class="comment"># Now use as if it were a NumPy ufunc</span>
+probs = phred_to_prob(qual_array)         <span class="comment"># broadcasts, multi-threaded</span>
+<span class="comment"># target options: "cpu" / "parallel" / "cuda" (requires CUDA toolkit)</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">caveats.py — what Numba does NOT support</span><pre><span class="comment"># Numba njit can't handle:</span>
+<span class="comment">#   - pandas DataFrames / Series</span>
+<span class="comment">#   - Python dicts of mixed types (use numba.typed.Dict)</span>
+<span class="comment">#   - try/except (limited support)</span>
+<span class="comment">#   - arbitrary Python classes (use @jitclass with type spec)</span>
+<span class="comment"># Workarounds:</span>
+
+<span class="kw">from</span> numba <span class="kw">import</span> njit, types
+<span class="kw">from</span> numba.typed <span class="kw">import</span> Dict
+
+<span class="kw">@</span><span class="func">njit</span>
+<span class="kw">def</span> <span class="func">unique_counts</span>(arr):
+    d = Dict.empty(key_type=types.int64, value_type=types.int64)
+    <span class="kw">for</span> x <span class="kw">in</span> arr:
+        d[x] = d.get(x, <span class="num">0</span>) + <span class="num">1</span>
+    <span class="kw">return</span> d
+
+<span class="comment"># First call has compilation overhead (~1 s); cache=True saves it for next run</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: Cython ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、Cython：把熱迴圈寫成 C 速度" data-en="III. Cython: C-Speed Hot Loops">三、Cython：把熱迴圈寫成 C 速度</h2>
+<div data-lang="zh"><p>Cython 是 Python 的超集，允許你用 <code>cdef</code> 宣告 C 型別變數、<code>cdef class</code> 寫 C-extension class、memoryview 安全地存取 NumPy buffer。pysam、scikit-learn、pandas 內部都大量使用 Cython。比 Numba 多了 build 步驟，但對需要分發 binary wheel 的 Bioconductor/PyPI 套件是必要的。</p></div>
+<div data-lang="en"><p>Cython is a Python superset that lets you declare C-typed variables with <code>cdef</code>, write C-extension classes via <code>cdef class</code>, and safely access NumPy buffers via memoryviews. pysam, scikit-learn, and pandas all use Cython internally. It has a build step (unlike Numba), but is the standard for PyPI/Bioconductor packages that need pre-compiled binary wheels.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">edit_dist.pyx</button>
+<button class="code-tab-btn">setup.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">edit_dist.pyx — Levenshtein with memoryviews</span><pre><span class="comment"># cython: boundscheck=False, wraparound=False, cdivision=True</span>
+<span class="kw">cimport</span> numpy <span class="kw">as</span> cnp
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">def</span> <span class="func">edit_distance</span>(bytes s1, bytes s2) -&gt; int:
+    <span class="kw">cdef</span> Py_ssize_t i, j, n = <span class="func">len</span>(s1), m = <span class="func">len</span>(s2)
+    <span class="kw">cdef</span> cnp.int32_t[:, ::<span class="num">1</span>] dp = np.zeros((n+<span class="num">1</span>, m+<span class="num">1</span>), dtype=np.int32)
+    <span class="kw">cdef</span> int cost
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="func">range</span>(n+<span class="num">1</span>): dp[i, <span class="num">0</span>] = i
+    <span class="kw">for</span> j <span class="kw">in</span> <span class="func">range</span>(m+<span class="num">1</span>): dp[<span class="num">0</span>, j] = j
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="func">range</span>(<span class="num">1</span>, n+<span class="num">1</span>):
+        <span class="kw">for</span> j <span class="kw">in</span> <span class="func">range</span>(<span class="num">1</span>, m+<span class="num">1</span>):
+            cost = <span class="num">0</span> <span class="kw">if</span> s1[i-<span class="num">1</span>] == s2[j-<span class="num">1</span>] <span class="kw">else</span> <span class="num">1</span>
+            dp[i, j] = <span class="func">min</span>(dp[i-<span class="num">1</span>, j] + <span class="num">1</span>,
+                           dp[i, j-<span class="num">1</span>] + <span class="num">1</span>,
+                           dp[i-<span class="num">1</span>, j-<span class="num">1</span>] + cost)
+    <span class="kw">return</span> dp[n, m]
+</pre></div>
+<div class="code-tab-content"><span class="filename">setup.py — build the extension</span><pre><span class="kw">from</span> setuptools <span class="kw">import</span> setup
+<span class="kw">from</span> Cython.Build <span class="kw">import</span> cythonize
+<span class="kw">import</span> numpy
+
+setup(
+    ext_modules=cythonize(<span class="str">"edit_dist.pyx"</span>, language_level=<span class="str">"3"</span>),
+    include_dirs=[numpy.get_include()],
+)
+
+<span class="comment"># Build:  python setup.py build_ext --inplace</span>
+<span class="comment"># Use:    from edit_dist import edit_distance</span>
+<span class="comment"># Typical speedup vs pure Python: 100–500×</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: R side: data.table, Rcpp ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="四、R 端：data.table 與 Rcpp" data-en="IV. R: data.table & Rcpp">四、R 端：data.table 與 Rcpp</h2>
+<div data-lang="zh"><p>R 的兩條主要加速路徑：(1) 用 <code>data.table</code> 取代 data.frame——by-reference 修改、key-indexed join、底層 C 實作；(2) 用 <code>Rcpp</code> 寫 C++ 函式直接呼叫，<code>RcppArmadillo</code> 給線性代數類似 NumPy 的語法。</p></div>
+<div data-lang="en"><p>Two main R speedup paths: (1) replace data.frame with <code>data.table</code> — by-reference mutation, key-indexed joins, C internals; (2) write C++ via <code>Rcpp</code>; <code>RcppArmadillo</code> gives NumPy-like linear-algebra syntax.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">datatable.R</button>
+<button class="code-tab-btn">rcpp_inline.R</button>
+<button class="code-tab-btn">arma.cpp</button>
+</div>
+<div class="code-tab-content active"><span class="filename">datatable.R — 10–100× faster than dplyr for big tables</span><pre>library(data.table)
+
+<span class="comment"># Read 5GB BED-like file in ~12 s (vs ~3 min for read.table)</span>
+dt &lt;- fread(<span class="str">"variants.tsv.gz"</span>)
+
+<span class="comment"># In-place mutate — NO copy</span>
+dt[, gc := (G + C) / (A + T + G + C)]
+
+<span class="comment"># Group-by aggregation — fully C-backed</span>
+result &lt;- dt[qual &gt; <span class="num">30</span>, .(n = .N, mean_dp = mean(DP)), by = chrom]
+
+<span class="comment"># Key-indexed join: pre-sort once, then binary search</span>
+setkey(dt, chrom, pos)
+hits &lt;- dt[regions, on = .(chrom, pos &gt;= start, pos &lt;= end)]
+</pre></div>
+<div class="code-tab-content"><span class="filename">rcpp_inline.R — compile C++ inline</span><pre>library(Rcpp)
+
+cppFunction(<span class="str">'
+  NumericVector cpp_rolling_mean(NumericVector x, int w) {
+    int n = x.size();
+    NumericVector out(n - w + 1);
+    double s = 0;
+    for (int i = 0; i &lt; w; ++i) s += x[i];
+    out[0] = s / w;
+    for (int i = w; i &lt; n; ++i) {
+      s += x[i] - x[i - w];
+      out[i - w + 1] = s / w;
+    }
+    return out;
+  }
+'</span>)
+
+<span class="comment"># 10M-element vector, w=100:</span>
+<span class="comment">#   R for-loop:        ~9.0 s</span>
+<span class="comment">#   zoo::rollmean:     ~1.2 s</span>
+<span class="comment">#   cpp_rolling_mean:  ~0.08 s  (~110×)</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">arma.cpp — RcppArmadillo for matrix math</span><pre><span class="comment">// PCA-style eigen decomp using Armadillo</span>
+<span class="kw">#include</span> &lt;RcppArmadillo.h&gt;
+<span class="comment">// [[Rcpp::depends(RcppArmadillo)]]</span>
+<span class="comment">// [[Rcpp::export]]</span>
+arma::mat <span class="func">cpp_pca</span>(<span class="kw">const</span> arma::mat&amp; X, <span class="kw">int</span> k) {
+    arma::mat Xc = X.each_row() - arma::mean(X, <span class="num">0</span>);
+    arma::mat U, V;
+    arma::vec s;
+    arma::svd_econ(U, s, V, Xc);
+    <span class="kw">return</span> U.cols(<span class="num">0</span>, k - <span class="num">1</span>) * arma::diagmat(s.head(k));
+}
+<span class="comment">// sourceCpp("pca.cpp") in R; calls into OpenBLAS, similar perf to NumPy</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: Speed comparison interactive ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="五、速度比較模擬器" data-en="V. Speedup Comparison Simulator">五、速度比較模擬器</h2>
+<div data-lang="zh"><p>下方滑桿給定資料量 N，估算純 Python / NumPy / Numba / Cython / 純 C 的相對時間（以 Python 為 1×）。比例基於對 element-wise 數值迴圈的常見實測。</p></div>
+<div data-lang="en"><p>Move the slider to set N; see relative runtimes of pure Python / NumPy / Numba / Cython / pure C (Python = 1×). Ratios are based on typical measurements for element-wise numeric loops.</p></div>
+
+<div class="interactive-panel">
+<h3 data-zh="⚡ 速度比較" data-en="⚡ Speedup Comparison">⚡ Speedup Comparison</h3>
+<div class="slider-group">
+  <label><span data-zh="陣列長度 N" data-en="Array length N">陣列長度 N</span> = <span id="nVal">1000000</span></label>
+  <input type="range" id="sliderN" min="3" max="9" value="6" step="1">
+  <small style="opacity:.7" data-lang="zh">(對數刻度 10^N)</small>
+  <small style="opacity:.7" data-lang="en">(log scale 10^N)</small>
+</div>
+<div id="speedBars" style="margin-top:1rem"></div>
+<div class="sim-stats" style="margin-top:.8rem">
+  <span class="sim-stat info" id="speedNote" data-zh="拖動滑桿觀察相對時間" data-en="Drag to see relative runtimes">拖動滑桿</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 7: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪種加速方式？" data-en="Which acceleration tool should I use?">該用哪種加速方式？</h2>
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我在 Python 寫 for-loop 處理 NumPy array」</strong> → 先重寫成向量化（broadcasting / einsum）</span><span data-lang="en"><strong>"I'm looping over a NumPy array in Python"</strong> → first try vectorizing (broadcasting / einsum)</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「向量化做不到、邏輯太複雜」</strong> → <code>@numba.njit</code>（最容易，常見 50–200×）</span><span data-lang="en"><strong>"Can't vectorize — logic too branchy"</strong> → <code>@numba.njit</code> (easiest, 50–200× typical)</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要發布到 PyPI/Bioconductor，且使用者不能跑 JIT」</strong> → Cython 預先編成 wheel</span><span data-lang="en"><strong>"Publishing to PyPI/Bioconductor — users can't JIT"</strong> → Cython + binary wheels</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「R 中 data.frame 操作慢」</strong> → 改 <code>data.table</code>（by-reference、無複製）</span><span data-lang="en"><strong>"R data.frame ops are slow"</strong> → switch to <code>data.table</code> (by-reference, no copy)</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「R 中的純數值熱迴圈」</strong> → <code>Rcpp::cppFunction</code> / <code>sourceCpp</code></span><span data-lang="en"><strong>"R pure-numeric hot loop"</strong> → <code>Rcpp::cppFunction</code> / <code>sourceCpp</code></span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我已經有一段 C / C++ 程式」</strong> → Python 用 <code>ctypes</code>/<code>cffi</code>；R 用 <code>.Call</code> 介面</span><span data-lang="en"><strong>"I already have C/C++ code"</strong> → Python: <code>ctypes</code>/<code>cffi</code>; R: <code>.Call</code> interface</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q1.</strong> 為什麼 <code>for x in numpy_array:</code> 比 <code>numpy_array.sum()</code> 慢很多？</p>
+<p data-lang="en"><strong>Q1.</strong> Why is <code>for x in numpy_array:</code> much slower than <code>numpy_array.sum()</code>?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. NumPy 用 SIMD，Python 沒</span><span data-lang="en">A. NumPy uses SIMD, Python does not</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. Python loop 每次都要 unbox/boxing PyObject、跑 bytecode；<code>.sum()</code> 整個 loop 跑在 C 層級</span><span data-lang="en">B. Python loop boxes/unboxes a PyObject per step and runs bytecode; <code>.sum()</code> runs the whole loop in C</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. <code>.sum()</code> 用 GPU</span><span data-lang="en">C. <code>.sum()</code> uses the GPU</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. NumPy 自動平行化</span><span data-lang="en">D. NumPy auto-parallelizes</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>核心開銷是 Python 解譯器與 PyObject overhead。SIMD 雖也有幫助，但量級遠不及把 loop 整段下放到 C。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> The dominant cost is interpreter + PyObject overhead. SIMD helps too, but pushing the loop into C is far more impactful.</div>
+</div>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q2.</strong> 你的 Numba <code>@njit</code> 函式第一次呼叫比第二次慢 200 倍，為什麼？</p>
+<p data-lang="en"><strong>Q2.</strong> Your <code>@njit</code> function is 200× slower on the first call than subsequent ones. Why?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. Numba 有 bug</span><span data-lang="en">A. Numba has a bug</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. Cache miss</span><span data-lang="en">B. CPU cache miss</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 第一次呼叫包含 JIT 編譯時間；可加 <code>cache=True</code> 把編好的二進位存起來</span><span data-lang="en">C. The first call includes JIT compile time; add <code>cache=True</code> to persist the binary</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. GIL 釋放</span><span data-lang="en">D. GIL release</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Numba lazy-compile：見到第一組型別才動工。Benchmark 時記得「先 warm-up 一次」再計時；分發時用 AOT 編譯或 <code>cache=True</code>。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Numba compiles lazily on first type signature seen. Always warm up before benchmarking; ship with AOT compilation or <code>cache=True</code>.</div>
+</div>
+
+<div class="quiz-q" data-correct="D">
+<p data-lang="zh"><strong>Q3.</strong> 你要寫一個會被 1000 個下游使用者 <code>pip install</code> 的工具，含一段純數值 hot loop。最合適的加速方案？</p>
+<p data-lang="en"><strong>Q3.</strong> You're shipping a tool to 1000 users via <code>pip install</code>, containing a pure-numeric hot loop. Best accelerator?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 純 Python，反正使用者電腦快</span><span data-lang="en">A. Pure Python; users have fast laptops</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. Numba JIT，第一次跑慢沒關係</span><span data-lang="en">B. Numba JIT — first run slow is fine</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 要求使用者裝 R 並改用 Rcpp</span><span data-lang="en">C. Require users to install R and use Rcpp</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. Cython + 預先在 CI 編好 manylinux/macOS/Windows wheels</span><span data-lang="en">D. Cython + pre-built manylinux/macOS/Windows wheels in CI</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 D。</strong>Numba 對 end-user 而言有 LLVM 重依賴、首次延遲、且編譯失敗時很難 debug。Cython 預編 wheel 是 pysam/scikit-learn/numpy 等大套件的標準做法。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: D.</strong> Numba imposes a heavy LLVM dependency on end users, first-call latency, and tricky failure modes. Pre-compiled Cython wheels are the standard approach (pysam, scikit-learn, NumPy all do this).</div>
+</div>
+
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="profiling-optimization.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Prev">← 上一頁</span><span class="nav-title" data-zh="B1 · 效能剖析與最佳化" data-en="B1 · Profiling & Optimization">B1 · 效能剖析與最佳化</span></a>
+<a href="parallel-computing.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="B3 · 平行運算" data-en="B3 · Parallel Computing">B3 · 平行運算</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · B2 向量化與編譯加速</footer>
+
+<script src="i18n.js"></script>
+<script>
+// ===== Interactive: Speed comparison =====
+// Relative time ratios (Python pure loop = 1.0) — these stay roughly constant
+// across N for element-wise numeric work. We add a tiny N-dependence so that
+// for very small N, JIT overhead makes Numba/Cython look less competitive.
+const baseRatios = {
+  "Pure Python loop": 1.00,
+  "NumPy vectorized": 1/180,
+  "Numba @njit":      1/220,
+  "Cython":           1/280,
+  "Pure C":           1/350
+};
+const colors = {
+  "Pure Python loop": "#c0392b",
+  "NumPy vectorized": "#e67e22",
+  "Numba @njit":      "#27ae60",
+  "Cython":           "#2980b9",
+  "Pure C":           "#8e44ad"
+};
+
+function renderSpeed(){
+  const exp = +document.getElementById('sliderN').value;
+  const N = Math.pow(10, exp);
+  document.getElementById('nVal').textContent = N.toLocaleString();
+  // python time approx: 1e-7 s per iteration → seconds
+  const tPython = N * 1e-7;
+  // For very small N, Numba/Cython lose to NumPy due to setup
+  const jitPenalty = exp <= 3 ? 0.0008 / tPython : 0;  // adds fraction of tPython
+  const ratios = { ...baseRatios };
+  ratios["Numba @njit"]  += jitPenalty;
+  ratios["Cython"]       += jitPenalty * 0.3;
+
+  const container = document.getElementById('speedBars');
+  container.innerHTML = '';
+  // Bars are scaled relative to Python (= 100%); shown on log scale for readability
+  Object.entries(ratios).forEach(([name, r]) => {
+    const tSec = tPython * r;
+    const widthPct = Math.max(2, Math.min(100, -Math.log10(r) * 20 + 6));  // log scale
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:.6rem;margin:.35rem 0;font-size:.85rem;';
+    row.innerHTML = `
+      <span style="width:170px;font-family:monospace">${name}</span>
+      <div style="flex:1;background:#eee;border-radius:4px;overflow:hidden;height:22px;">
+        <div style="background:${colors[name]};height:100%;width:${widthPct}%;transition:width .2s;"></div>
+      </div>
+      <span style="width:130px;text-align:right;font-family:monospace">${tSec < 1 ? (tSec*1000).toFixed(2) + ' ms' : tSec.toFixed(2) + ' s'}</span>
+      <span style="width:60px;text-align:right;font-family:monospace;color:#666">${(1/r).toFixed(0)}×</span>
+    `;
+    container.appendChild(row);
+  });
+  const note = document.getElementById('speedNote');
+  if (exp <= 3) note.textContent = "Small N: Numba/Cython JIT overhead is visible relative to pure NumPy";
+  else if (exp >= 8) note.textContent = "Large N: pure Python is impractical; Numba ≈ Cython ≈ C within 2×";
+  else note.textContent = "Sweet spot: vectorize first, JIT if you can't";
+}
+document.getElementById('sliderN').addEventListener('input', renderSpeed);
+renderSpeed();
+</script>
+</body></html>

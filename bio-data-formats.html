@@ -1,0 +1,574 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>C1: 生醫資料格式 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html" class="active">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK C · TOPIC 9 / 20</div>
+<h1 data-zh="生醫資料格式：從 CSV 到 HDF5 / Zarr / Parquet" data-en="Bio Data Formats: From CSV to HDF5 / Zarr / Parquet">生醫資料格式：從 CSV 到 HDF5 / Zarr / Parquet</h1>
+<p class="subtitle" data-lang="zh">當 FASTQ.gz 已經數十 GB、單細胞矩陣是 200k × 30k 的 sparse、影像 dataset 進 TB——純文字 + pandas 不再夠用。本章帶你看懂 HDF5、Zarr、Parquet、Arrow 的差異，以及如何在 R 與 Python 間共享同一份檔案。</p>
+<p class="subtitle" data-lang="en">When FASTQ.gz reaches tens of GB, single-cell matrices are 200k × 30k sparse, and imaging datasets enter TB scale — plain text + pandas no longer suffice. This chapter walks through HDF5, Zarr, Parquet, and Arrow, plus how to share the same file between R and Python.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼純文字檔不夠了？" data-en="Why text files run out of steam">為什麼純文字檔不夠了？</h2>
+<div data-lang="zh">
+<p>CSV / TSV / FASTQ 是純文字，可讀性高、跨平台、但有三類致命缺點：</p>
+<ul>
+<li><strong>體積膨脹：</strong>單細胞 raw count matrix (200k cells × 30k genes) 存成 CSV 要 ~30GB；存成稀疏 HDF5 只要 ~500MB。</li>
+<li><strong>無 schema：</strong>欄位型別、單位、缺失值表示法不明確，每讀一次要重新猜。</li>
+<li><strong>無隨機存取：</strong>要拿第 1,000,000 列必須掃過前 999,999 列；對大型 dataset 完全不可行。</li>
+</ul>
+<p>本章六個格式：<strong>HDF5</strong>、<strong>Zarr</strong>、<strong>Parquet</strong>、<strong>Arrow / Feather</strong>、<strong>AnnData/Loom</strong>、<strong>索引化 BAM/VCF</strong>，各自解決上述問題的一面。</p>
+</div>
+<div data-lang="en">
+<p>CSV/TSV/FASTQ are plain text — human-readable, cross-platform, but with three fatal flaws:</p>
+<ul>
+<li><strong>Size explosion:</strong> A single-cell raw count matrix (200k cells × 30k genes) is ~30GB as CSV but only ~500MB as sparse HDF5.</li>
+<li><strong>No schema:</strong> Column types, units, and missing-value conventions are ambiguous and must be re-inferred every read.</li>
+<li><strong>No random access:</strong> Fetching row 1,000,000 requires scanning rows 1 through 999,999 — impractical at scale.</li>
+</ul>
+<p>The six formats here — <strong>HDF5</strong>, <strong>Zarr</strong>, <strong>Parquet</strong>, <strong>Arrow/Feather</strong>, <strong>AnnData/Loom</strong>, <strong>indexed BAM/VCF</strong> — each solve a facet of these problems.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>學習策略：</strong>不要記每個 API。記住「資料形狀 → 格式」的對應：n-dim array → HDF5/Zarr；table → Parquet/Arrow；read-once stream → 文字壓縮就好。</span>
+<span data-lang="en"><strong>Learning strategy:</strong> Don't memorize every API. Remember the "shape → format" mapping: n-d arrays → HDF5/Zarr; tables → Parquet/Arrow; read-once stream → plain compressed text is fine.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: HDF5 ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、HDF5 — 階層式科學資料容器" data-en="I. HDF5 — Hierarchical Scientific Data Container">一、HDF5 — 階層式科學資料容器</h2>
+<div data-lang="zh"><p>HDF5 是 NASA / NIH 等大型科學計畫的事實標準。一個 <code>.h5</code> 檔像一個「檔案系統內的檔案系統」：可以有 group (像目錄)、dataset (像 NumPy array)、attribute (metadata)。<strong>10x Cellranger 輸出 <code>filtered_feature_bc_matrix.h5</code></strong> 就是 HDF5。Bioconductor 的 <code>HDF5Array</code>、<code>DelayedArray</code> 也建立在 HDF5 之上。</p></div>
+<div data-lang="en"><p>HDF5 is the de-facto standard for large scientific projects (NASA, NIH). A <code>.h5</code> file behaves like a filesystem inside a file: groups (directories), datasets (NumPy arrays), attributes (metadata). <strong>10x Cellranger's <code>filtered_feature_bc_matrix.h5</code></strong> is HDF5. Bioconductor's <code>HDF5Array</code> and <code>DelayedArray</code> are also HDF5-backed.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">h5py.py</button>
+<button class="code-tab-btn">rhdf5.R</button>
+<button class="code-tab-btn">10x.py</button>
+<button class="code-tab-btn">chunk.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">h5py.py — Python read/write</span><pre><span class="kw">import</span> h5py, numpy <span class="kw">as</span> np
+
+<span class="comment"># Write: chunked + compressed dataset, 30k × 200k sparse-like</span>
+<span class="kw">with</span> h5py.File(<span class="str">"counts.h5"</span>, <span class="str">"w"</span>) <span class="kw">as</span> f:
+    grp = f.create_group(<span class="str">"sample01"</span>)
+    grp.create_dataset(
+        <span class="str">"X"</span>, data=np.random.poisson(<span class="num">1</span>, (<span class="num">30000</span>, <span class="num">200000</span>)),
+        chunks=(<span class="num">500</span>, <span class="num">500</span>),       <span class="comment"># &lt;-- chunk size matters!</span>
+        compression=<span class="str">"gzip"</span>, compression_opts=<span class="num">4</span>,
+    )
+    grp.attrs[<span class="str">"genome"</span>] = <span class="str">"GRCh38"</span>
+    grp.attrs[<span class="str">"date"</span>]   = <span class="str">"2026-05-15"</span>
+
+<span class="comment"># Read only one slice — never loads full matrix</span>
+<span class="kw">with</span> h5py.File(<span class="str">"counts.h5"</span>, <span class="str">"r"</span>) <span class="kw">as</span> f:
+    chunk = f[<span class="str">"sample01/X"</span>][<span class="num">0</span>:<span class="num">100</span>, <span class="num">0</span>:<span class="num">1000</span>]   <span class="comment"># lazy</span>
+    genome = f[<span class="str">"sample01"</span>].attrs[<span class="str">"genome"</span>]
+</pre></div>
+<div class="code-tab-content"><span class="filename">rhdf5.R — Bioconductor side</span><pre><span class="kw">library</span>(rhdf5)
+<span class="kw">library</span>(HDF5Array)
+
+<span class="comment"># Write</span>
+h5createFile(<span class="str">"counts.h5"</span>)
+h5createGroup(<span class="str">"counts.h5"</span>, <span class="str">"sample01"</span>)
+h5write(matrix(<span class="func">rpois</span>(<span class="num">1e6</span>, <span class="num">1</span>), <span class="num">1000</span>, <span class="num">1000</span>),
+        file=<span class="str">"counts.h5"</span>, name=<span class="str">"sample01/X"</span>)
+
+<span class="comment"># DelayedArray-backed: on-disk, looks like in-memory matrix</span>
+X &lt;- HDF5Array(<span class="str">"counts.h5"</span>, <span class="str">"sample01/X"</span>)
+<span class="func">dim</span>(X)              <span class="comment"># 1000 1000 — but nothing loaded yet</span>
+gene_means &lt;- <span class="func">rowMeans</span>(X)  <span class="comment"># computed in chunks</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">10x.py — read Cellranger output</span><pre><span class="kw">import</span> scanpy <span class="kw">as</span> sc
+
+<span class="comment"># 10x Cellranger writes filtered_feature_bc_matrix.h5</span>
+<span class="comment"># It uses HDF5 + sparse CSC encoding internally</span>
+adata = sc.read_10x_h5(<span class="str">"filtered_feature_bc_matrix.h5"</span>)
+<span class="func">print</span>(adata)
+<span class="comment"># AnnData object with n_obs × n_vars = 8000 × 33538</span>
+
+<span class="comment"># Same file, raw h5py — see the internal structure</span>
+<span class="kw">with</span> h5py.File(<span class="str">"filtered_feature_bc_matrix.h5"</span>) <span class="kw">as</span> f:
+    <span class="func">print</span>(<span class="func">list</span>(f[<span class="str">"matrix"</span>].keys()))
+    <span class="comment"># ['barcodes', 'data', 'features', 'indices', 'indptr', 'shape']</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">chunk.py — chunk shape matters</span><pre><span class="comment"># Chunk shape decides the access pattern</span>
+<span class="comment"># Row-major access? chunks=(1000, ncols) — one row = one I/O</span>
+<span class="comment"># Per-gene access? chunks=(nrows, 1000) — one gene = one I/O</span>
+<span class="comment"># Random tiles? chunks=(500, 500) — balanced</span>
+
+<span class="comment"># Compression vs random access: gzip = small but slower to decompress</span>
+<span class="comment">#                              lzf  = ~2x faster, less ratio</span>
+<span class="comment">#                              blosc/zstd (h5py-plugin) = best of both</span>
+
+<span class="kw">import</span> hdf5plugin
+f.create_dataset(<span class="str">"X"</span>, data=X, chunks=(<span class="num">500</span>,<span class="num">500</span>),
+                 **hdf5plugin.Blosc(cname=<span class="str">"zstd"</span>, clevel=<span class="num">5</span>))
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>注意：</strong>HDF5 是「單檔案」，並行寫入需要 MPI 版本 (Parallel HDF5)。多 worker 同時寫入普通 HDF5 會造成檔案損毀——這正是 Zarr 出現的原因。</span>
+<span data-lang="en"><strong>Note:</strong> HDF5 is single-file; concurrent writes require Parallel HDF5 (MPI). Multiple workers writing to plain HDF5 corrupt the file — which is exactly why Zarr exists.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: Zarr ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、Zarr — Cloud-Native 的下一代 HDF5" data-en="II. Zarr — Cloud-Native Next-Gen HDF5">二、Zarr — Cloud-Native 的下一代 HDF5</h2>
+<div data-lang="zh">
+<p>Zarr 把 HDF5 的概念「拆檔案」：每個 chunk 是一個獨立的小檔 (或 S3 object)，整個 array 是一個目錄。優點：</p>
+<ul>
+<li><strong>並行寫：</strong>不同 worker 寫不同 chunk，毫無衝突。</li>
+<li><strong>雲端原生：</strong>直接讀 <code>s3://bucket/array.zarr/</code>，無需先下載整檔。</li>
+<li><strong>OME-Zarr</strong> 是 OME / 影像領域的標準 (顯微影像、空間轉錄)；<strong>AnnData on Zarr</strong> 是單細胞的趨勢。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p>Zarr breaks HDF5's "one file" constraint: each chunk is a separate small file (or S3 object), and the whole array is a directory. Benefits:</p>
+<ul>
+<li><strong>Parallel writes:</strong> Different workers write different chunks without conflict.</li>
+<li><strong>Cloud-native:</strong> Read <code>s3://bucket/array.zarr/</code> directly — no full-file download.</li>
+<li><strong>OME-Zarr</strong> is the OME imaging standard (microscopy, spatial transcriptomics); <strong>AnnData on Zarr</strong> is the single-cell direction.</li>
+</ul>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">zarr_basic.py</button>
+<button class="code-tab-btn">zarr_cloud.py</button>
+<button class="code-tab-btn">anndata_zarr.py</button>
+<button class="code-tab-btn">Rarr.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">zarr_basic.py</span><pre><span class="kw">import</span> zarr, numpy <span class="kw">as</span> np
+
+<span class="comment"># Create a chunked array; results in a directory `counts.zarr/`</span>
+z = zarr.open(<span class="str">"counts.zarr"</span>, mode=<span class="str">"w"</span>,
+              shape=(<span class="num">30000</span>, <span class="num">200000</span>), chunks=(<span class="num">500</span>, <span class="num">500</span>),
+              dtype=<span class="str">"int32"</span>, compressor=zarr.Blosc(cname=<span class="str">"zstd"</span>))
+z[<span class="num">0</span>:<span class="num">100</span>, <span class="num">0</span>:<span class="num">100</span>] = np.random.poisson(<span class="num">1</span>, (<span class="num">100</span>,<span class="num">100</span>))
+
+<span class="comment"># Hierarchy like HDF5 groups</span>
+root = zarr.open(<span class="str">"experiment.zarr"</span>, mode=<span class="str">"w"</span>)
+root.create_dataset(<span class="str">"sample01/X"</span>, shape=(<span class="num">30000</span>,<span class="num">200000</span>), chunks=(<span class="num">500</span>,<span class="num">500</span>))
+root[<span class="str">"sample01"</span>].attrs[<span class="str">"genome"</span>] = <span class="str">"GRCh38"</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">zarr_cloud.py — read directly from S3</span><pre><span class="kw">import</span> zarr, s3fs
+
+s3 = s3fs.S3FileSystem(anon=<span class="kw">True</span>)
+store = s3fs.S3Map(root=<span class="str">"idr-bucket/zarr/idr0001.zarr"</span>, s3=s3)
+root  = zarr.open(store, mode=<span class="str">"r"</span>)
+
+<span class="comment"># Inspect without downloading</span>
+<span class="func">print</span>(root.tree())
+
+<span class="comment"># Pull only the tile you need (Dask + Zarr → lazy distributed)</span>
+<span class="kw">import</span> dask.array <span class="kw">as</span> da
+arr = da.from_zarr(store, component=<span class="str">"0"</span>)
+tile = arr[<span class="num">0</span>, <span class="num">0</span>, <span class="num">500</span>:<span class="num">1500</span>, <span class="num">500</span>:<span class="num">1500</span>].compute()
+</pre></div>
+<div class="code-tab-content"><span class="filename">anndata_zarr.py — single-cell, Zarr-backed</span><pre><span class="kw">import</span> anndata <span class="kw">as</span> ad
+<span class="kw">import</span> scanpy <span class="kw">as</span> sc
+
+<span class="comment"># Write AnnData to Zarr (cloud-friendly)</span>
+adata = sc.read_h5ad(<span class="str">"pbmc.h5ad"</span>)
+adata.write_zarr(<span class="str">"pbmc.zarr"</span>)
+
+<span class="comment"># Lazy load — adata.X is a Zarr array, not in RAM</span>
+adata2 = ad.read_zarr(<span class="str">"pbmc.zarr"</span>)
+
+<span class="comment"># MuData (multi-modal: RNA + ATAC + protein) also supports Zarr</span>
+<span class="kw">import</span> mudata <span class="kw">as</span> mu
+mdata = mu.read_zarr(<span class="str">"multiome.zarr"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">Rarr.R — R-side Zarr</span><pre><span class="kw">library</span>(Rarr)
+
+<span class="comment"># Read a Zarr array written by Python</span>
+z &lt;- read_zarr_array(<span class="str">"counts.zarr"</span>)
+<span class="func">dim</span>(z)
+
+<span class="comment"># Write from R</span>
+m &lt;- matrix(<span class="func">rnorm</span>(<span class="num">1e6</span>), <span class="num">1000</span>, <span class="num">1000</span>)
+write_zarr_array(m, zarr_array_path=<span class="str">"from_r.zarr"</span>,
+                 chunk_dim=<span class="func">c</span>(<span class="num">100</span>, <span class="num">100</span>),
+                 compressor=use_blosc(cname=<span class="str">"zstd"</span>))
+
+<span class="comment"># Now Python can `zarr.open("from_r.zarr")` — same bytes</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: Parquet & Arrow ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、Parquet 與 Arrow — 表格式資料的最強組合" data-en="III. Parquet & Arrow — table-data power couple">三、Parquet 與 Arrow — 表格式資料的最強組合</h2>
+<div data-lang="zh">
+<p><strong>Apache Parquet</strong> 是磁碟上的 columnar 格式：同一欄位連續存放、可單獨壓縮、查詢時只讀需要的欄位 (predicate pushdown)。<strong>Apache Arrow</strong> 是記憶體中的 columnar 表達；同樣的 bytes 可以在 R / Python / Julia / DuckDB / Spark 間 zero-copy 共享。<strong>Feather</strong> 是 Arrow 的磁碟版 (適合短期 cache)，<strong>Parquet</strong> 適合長期儲存。</p>
+</div>
+<div data-lang="en">
+<p><strong>Apache Parquet</strong> is an on-disk columnar format: columns stored contiguously, compressed independently, with predicate pushdown so queries only read needed columns. <strong>Apache Arrow</strong> is the in-memory columnar representation — the same bytes can be zero-copy shared across R / Python / Julia / DuckDB / Spark. <strong>Feather</strong> is Arrow-on-disk (short-term cache); <strong>Parquet</strong> is for long-term storage.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">parquet.py</button>
+<button class="code-tab-btn">arrow.R</button>
+<button class="code-tab-btn">predicate.py</button>
+<button class="code-tab-btn">zerocopy.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">parquet.py — read/write + partition</span><pre><span class="kw">import</span> pandas <span class="kw">as</span> pd, pyarrow <span class="kw">as</span> pa, pyarrow.parquet <span class="kw">as</span> pq
+
+variants = pd.DataFrame({
+    <span class="str">"chrom"</span>: [<span class="str">"chr1"</span>]*<span class="num">3</span> + [<span class="str">"chr2"</span>]*<span class="num">2</span>,
+    <span class="str">"pos"</span>:   [<span class="num">100</span>, <span class="num">200</span>, <span class="num">300</span>, <span class="num">400</span>, <span class="num">500</span>],
+    <span class="str">"qual"</span>:  [<span class="num">30.1</span>, <span class="num">42.0</span>, <span class="num">28.5</span>, <span class="num">35.0</span>, <span class="num">50.2</span>],
+})
+
+<span class="comment"># Plain write</span>
+variants.to_parquet(<span class="str">"variants.parquet"</span>, compression=<span class="str">"zstd"</span>)
+
+<span class="comment"># Partitioned: one directory per chrom → reads chr1 without touching chr2</span>
+variants.to_parquet(<span class="str">"variants_partitioned/"</span>, partition_cols=[<span class="str">"chrom"</span>])
+<span class="comment"># variants_partitioned/chrom=chr1/part-0.parquet</span>
+<span class="comment"># variants_partitioned/chrom=chr2/part-0.parquet</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">arrow.R — read same file in R</span><pre><span class="kw">library</span>(arrow)
+<span class="kw">library</span>(dplyr)
+
+<span class="comment"># Read parquet written by Python — exact same bytes, same types</span>
+df &lt;- read_parquet(<span class="str">"variants.parquet"</span>)
+
+<span class="comment"># Open a partitioned dataset lazily</span>
+ds &lt;- open_dataset(<span class="str">"variants_partitioned/"</span>)
+ds %&gt;% <span class="func">filter</span>(chrom == <span class="str">"chr1"</span>, qual &gt; <span class="num">30</span>) %&gt;%
+       <span class="func">select</span>(chrom, pos, qual) %&gt;%
+       <span class="func">collect</span>()      <span class="comment"># pushdown: chr2 partition never opened</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">predicate.py — pushdown saves I/O</span><pre><span class="kw">import</span> pyarrow.parquet <span class="kw">as</span> pq
+
+<span class="comment"># Read ONLY rows where qual &gt; 30 and ONLY columns chrom, pos</span>
+tbl = pq.read_table(
+    <span class="str">"variants.parquet"</span>,
+    columns=[<span class="str">"chrom"</span>, <span class="str">"pos"</span>],          <span class="comment"># column projection</span>
+    filters=[(<span class="str">"qual"</span>, <span class="str">"&gt;"</span>, <span class="num">30</span>)],         <span class="comment"># predicate pushdown</span>
+)
+df = tbl.to_pandas()
+
+<span class="comment"># DuckDB on top of Parquet — even more pushdown</span>
+<span class="kw">import</span> duckdb
+duckdb.sql(<span class="str">"""
+    SELECT chrom, COUNT(*) AS n
+    FROM 'variants_partitioned/*/*.parquet'
+    WHERE qual &gt; 30
+    GROUP BY chrom
+"""</span>).df()
+</pre></div>
+<div class="code-tab-content"><span class="filename">zerocopy.py — Arrow as IPC</span><pre><span class="kw">import</span> pyarrow <span class="kw">as</span> pa, pyarrow.feather <span class="kw">as</span> ft
+
+<span class="comment"># Feather v2 = Arrow IPC file (no compression by default → very fast)</span>
+ft.write_feather(variants, <span class="str">"variants.feather"</span>)
+df2 = ft.read_feather(<span class="str">"variants.feather"</span>)
+
+<span class="comment"># Memory map → zero-copy share between processes</span>
+mm = pa.memory_map(<span class="str">"variants.feather"</span>, <span class="str">"r"</span>)
+reader = pa.ipc.open_file(mm)
+tbl = reader.read_all()       <span class="comment"># no allocation, just pointer</span>
+
+<span class="comment"># Hand a pyarrow.Table directly to DuckDB / Polars — zero-copy</span>
+<span class="kw">import</span> polars <span class="kw">as</span> pl
+pl_df = pl.from_arrow(tbl)
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: AnnData / Loom / indexed BAM/VCF ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="四、領域格式：AnnData、Loom、BAM/VCF index" data-en="IV. Domain formats: AnnData, Loom, indexed BAM/VCF">四、領域格式：AnnData、Loom、BAM/VCF index</h2>
+<div data-lang="zh"><p>除了通用的 HDF5/Zarr/Parquet，生醫領域有幾個專屬格式：</p>
+<ul>
+<li><strong>AnnData (.h5ad)</strong> — 單細胞主流，HDF5-based，欄位包含 X (count matrix)、obs (cell metadata)、var (gene metadata)、obsm/varm (embeddings)。也支援 .zarr。</li>
+<li><strong>MuData</strong> — multi-modal AnnData 容器 (RNA + ATAC + ADT + spatial)。</li>
+<li><strong>Loom</strong> — Linnarsson lab 提出、HDF5-based 的單細胞格式，velocyto 用它。</li>
+<li><strong>BAM/CRAM + .bai/.crai</strong> — alignment 二進位格式，<code>bgzip</code> + <code>tabix</code> 提供區段隨機存取。VCF.gz + .tbi 同理。</li>
+</ul></div>
+<div data-lang="en"><p>Besides the general-purpose HDF5/Zarr/Parquet, the bio domain has several dedicated formats:</p>
+<ul>
+<li><strong>AnnData (.h5ad)</strong> — single-cell standard, HDF5-based, with X (count matrix), obs (cell metadata), var (gene metadata), obsm/varm (embeddings). Also supports .zarr.</li>
+<li><strong>MuData</strong> — multi-modal AnnData container (RNA + ATAC + ADT + spatial).</li>
+<li><strong>Loom</strong> — Linnarsson-lab single-cell format, HDF5-based; used by velocyto.</li>
+<li><strong>BAM/CRAM + .bai/.crai</strong> — binary alignment formats; <code>bgzip</code> + <code>tabix</code> provide region-based random access. Same for VCF.gz + .tbi.</li>
+</ul></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">anndata.py</button>
+<button class="code-tab-btn">loom.py</button>
+<button class="code-tab-btn">tabix.py</button>
+<button class="code-tab-btn">tabix.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">anndata.py — on-disk schema</span><pre><span class="kw">import</span> anndata <span class="kw">as</span> ad, h5py
+
+<span class="comment"># .h5ad is HDF5 under the hood — inspect with h5py</span>
+<span class="kw">with</span> h5py.File(<span class="str">"pbmc.h5ad"</span>) <span class="kw">as</span> f:
+    <span class="func">print</span>(<span class="func">list</span>(f.keys()))
+    <span class="comment"># ['X', 'obs', 'obsm', 'obsp', 'raw', 'uns', 'var', 'varm']</span>
+    <span class="func">print</span>(f[<span class="str">"X"</span>].attrs[<span class="str">"encoding-type"</span>])  <span class="comment"># 'csr_matrix'</span>
+
+<span class="comment"># Backed mode — keep matrix on disk, only metadata in RAM</span>
+adata = ad.read_h5ad(<span class="str">"pbmc.h5ad"</span>, backed=<span class="str">"r"</span>)
+sub = adata[adata.obs.cell_type == <span class="str">"T cell"</span>].to_memory()
+</pre></div>
+<div class="code-tab-content"><span class="filename">loom.py</span><pre><span class="kw">import</span> loompy
+
+<span class="kw">with</span> loompy.connect(<span class="str">"velocyto.loom"</span>) <span class="kw">as</span> ds:
+    <span class="func">print</span>(ds.shape)                <span class="comment"># (n_genes, n_cells)</span>
+    spliced   = ds.layers[<span class="str">"spliced"</span>][:, :<span class="num">100</span>]
+    unspliced = ds.layers[<span class="str">"unspliced"</span>][:, :<span class="num">100</span>]
+    cell_id   = ds.ca[<span class="str">"CellID"</span>]
+    gene      = ds.ra[<span class="str">"Gene"</span>]
+
+<span class="comment"># Note: AnnData (cells×genes) and Loom (genes×cells) are transposed!</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">tabix.py — region query in VCF.gz</span><pre><span class="kw">import</span> pysam
+
+<span class="comment"># Build the index once: bgzip variants.vcf &amp;&amp; tabix -p vcf variants.vcf.gz</span>
+vcf = pysam.VariantFile(<span class="str">"variants.vcf.gz"</span>)
+<span class="kw">for</span> rec <span class="kw">in</span> vcf.fetch(<span class="str">"chr17"</span>, <span class="num">7_575_000</span>, <span class="num">7_590_000</span>):   <span class="comment"># TP53 locus</span>
+    <span class="func">print</span>(rec.contig, rec.pos, rec.ref, rec.alts, rec.qual)
+<span class="comment"># Only seeks the relevant bgzip block — millisecond response</span>
+
+<span class="comment"># Same idea for BAM:</span>
+bam = pysam.AlignmentFile(<span class="str">"sample.bam"</span>, <span class="str">"rb"</span>)
+<span class="kw">for</span> read <span class="kw">in</span> bam.fetch(<span class="str">"chr1"</span>, <span class="num">1_000_000</span>, <span class="num">1_001_000</span>):
+    <span class="kw">pass</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">tabix.R — Rsamtools</span><pre><span class="kw">library</span>(Rsamtools)
+<span class="kw">library</span>(VariantAnnotation)
+
+<span class="comment"># Region query on indexed VCF.gz</span>
+rng &lt;- GRanges(<span class="str">"chr17"</span>, IRanges(<span class="num">7575000</span>, <span class="num">7590000</span>))
+vcf &lt;- readVcf(TabixFile(<span class="str">"variants.vcf.gz"</span>), <span class="str">"hg38"</span>, param=rng)
+
+<span class="comment"># BAM region query</span>
+bam &lt;- BamFile(<span class="str">"sample.bam"</span>)
+reads &lt;- scanBam(bam, param=ScanBamParam(which=rng))[[<span class="num">1</span>]]
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: Comparison Table ===== -->
+<section class="section">
+<div class="section-label" data-zh="比較" data-en="COMPARISON">比較</div>
+<h2 data-zh="五、HDF5 vs Zarr vs Parquet vs Arrow" data-en="V. HDF5 vs Zarr vs Parquet vs Arrow">五、HDF5 vs Zarr vs Parquet vs Arrow</h2>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="特性" data-en="Feature">特性</th>
+<th>HDF5</th>
+<th>Zarr</th>
+<th>Parquet</th>
+<th>Arrow / Feather</th>
+</tr></thead><tbody>
+<tr><td data-zh="資料形狀" data-en="Data shape">資料形狀</td>
+  <td data-zh="N 維 array + 階層" data-en="N-D array + hierarchy">N 維 array + 階層</td>
+  <td data-zh="N 維 array + 階層" data-en="N-D array + hierarchy">N 維 array + 階層</td>
+  <td data-zh="表格 (columnar)" data-en="Tabular (columnar)">表格 (columnar)</td>
+  <td data-zh="表格 (columnar)" data-en="Tabular (columnar)">表格 (columnar)</td></tr>
+<tr><td data-zh="儲存單位" data-en="Storage unit">儲存單位</td>
+  <td data-zh="單一檔案" data-en="Single file">單一檔案</td>
+  <td data-zh="多檔/目錄" data-en="Directory of chunks">多檔/目錄</td>
+  <td data-zh="單檔或分區目錄" data-en="File or partition dir">單檔或分區目錄</td>
+  <td data-zh="單檔 (.arrow/.feather)" data-en="Single file">單檔</td></tr>
+<tr><td data-zh="並行寫" data-en="Parallel write">並行寫</td>
+  <td data-zh="❌ (需 MPI)" data-en="❌ (needs MPI)">❌</td>
+  <td>✅</td>
+  <td data-zh="✅ (分區)" data-en="✅ (partitioned)">✅</td>
+  <td>❌</td></tr>
+<tr><td data-zh="雲端原生 (S3/GCS)" data-en="Cloud-native">雲端原生</td>
+  <td data-zh="❌ (整檔下載)" data-en="❌ (full download)">❌</td>
+  <td>✅</td>
+  <td>✅</td>
+  <td data-zh="○" data-en="○">○</td></tr>
+<tr><td data-zh="Predicate pushdown" data-en="Predicate pushdown">Predicate pushdown</td>
+  <td>❌</td>
+  <td>❌</td>
+  <td>✅</td>
+  <td data-zh="○" data-en="○">○</td></tr>
+<tr><td data-zh="跨語言 (R/Py 同 bytes)" data-en="Cross-language">跨語言</td>
+  <td>✅</td>
+  <td>✅</td>
+  <td>✅</td>
+  <td data-zh="✅ (zero-copy)" data-en="✅ (zero-copy)">✅</td></tr>
+<tr><td data-zh="代表用途" data-en="Canonical use">代表用途</td>
+  <td>10x .h5、AnnData、影像</td>
+  <td>OME-Zarr、雲端單細胞</td>
+  <td data-zh="變異註釋、QC 表" data-en="Variant annotation, QC tables">變異註釋、QC 表</td>
+  <td data-zh="跨語言 IPC、cache" data-en="Cross-lang IPC, cache">跨語言 IPC、cache</td></tr>
+</tbody></table>
+</section>
+
+<!-- ===== Interactive Panel: Format Chooser ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="六、格式選擇器" data-en="VI. Format Chooser">六、格式選擇器</h2>
+
+<div class="interactive-panel">
+<h3 data-zh="輸入你的資料情境，看推薦格式" data-en="Describe your data, get a format recommendation">輸入你的資料情境，看推薦格式</h3>
+<div class="slider-group">
+<label><span data-zh="資料形狀" data-en="Data shape">資料形狀</span></label>
+<select id="fmtShape">
+  <option value="array">N-D array / matrix</option>
+  <option value="table">table / dataframe</option>
+</select>
+</div>
+<div class="slider-group">
+<label><span data-zh="存取模式" data-en="Access pattern">存取模式</span></label>
+<select id="fmtAccess">
+  <option value="random">random / tile slicing</option>
+  <option value="streaming">streaming / read once</option>
+  <option value="filter">filter columns + rows</option>
+</select>
+</div>
+<div class="slider-group">
+<label><span data-zh="使用語言" data-en="Language">使用語言</span></label>
+<select id="fmtLang">
+  <option value="both">R + Python both</option>
+  <option value="python">Python only</option>
+  <option value="r">R only</option>
+</select>
+</div>
+<div class="slider-group">
+<label><span data-zh="雲端 (S3/GCS)" data-en="Cloud (S3/GCS)">雲端</span></label>
+<select id="fmtCloud">
+  <option value="no">no — local disk</option>
+  <option value="yes">yes — S3/GCS</option>
+</select>
+</div>
+<div class="sim-stats">
+  <span class="sim-stat pass" id="fmtRec">recommendation: —</span>
+  <span class="sim-stat info" id="fmtWhy">reason: —</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 8: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個格式？" data-en="Which format do I need?">該用哪個格式？</h2>
+
+<div class="decision-tree">
+<h4 data-zh="情境 → 格式對照" data-en="Situation → Format">情境 → 格式對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「10x scRNA-seq 輸出」</strong> → HDF5 (.h5)，用 scanpy / Seurat 讀</span><span data-lang="en"><strong>"10x scRNA-seq output"</strong> → HDF5 (.h5), use scanpy / Seurat</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「OME 顯微影像 / 空間轉錄」</strong> → OME-Zarr，雲端 + 多解析度金字塔</span><span data-lang="en"><strong>"OME microscopy / spatial transcriptomics"</strong> → OME-Zarr (cloud + multi-resolution pyramid)</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「百萬列變異註釋表，要 SQL 查」</strong> → Parquet (partitioned by chrom) + DuckDB</span><span data-lang="en"><strong>"Millions of variant annotations, SQL-queried"</strong> → Parquet (partitioned by chrom) + DuckDB</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「R 計算結果 → Python 再吃」</strong> → Feather / Arrow IPC，zero-copy</span><span data-lang="en"><strong>"R output → Python pipeline"</strong> → Feather / Arrow IPC, zero-copy</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「VCF 要按基因區段查」</strong> → bgzip + tabix index</span><span data-lang="en"><strong>"VCF region queries"</strong> → bgzip + tabix index</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「100 個 worker 同時寫入大 array」</strong> → Zarr (HDF5 不行)</span><span data-lang="en"><strong>"100 workers writing one big array"</strong> → Zarr (HDF5 cannot)</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> 為什麼 OME 影像社群選擇 Zarr 而非 HDF5？</p>
+<p data-lang="en"><strong>Q1.</strong> Why did the OME imaging community pick Zarr over HDF5?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. HDF5 不支援壓縮</span><span data-lang="en">A. HDF5 doesn't support compression</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. Zarr 速度永遠比 HDF5 快</span><span data-lang="en">B. Zarr is always faster than HDF5</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. Zarr 是多檔結構，支援並行寫與直接讀 S3</span><span data-lang="en">C. Zarr is multi-file, supports parallel writes and direct S3 reads</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. HDF5 只能存 1D array</span><span data-lang="en">D. HDF5 only stores 1D arrays</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>HDF5 是單檔結構，並行寫需 MPI 版本；要從 S3 讀必須整檔下載。Zarr 每個 chunk 是獨立 object，天然適合雲端與分散式運算。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> HDF5 is single-file; concurrent writes need MPI; S3 reads require full download. Zarr stores each chunk as an independent object — cloud- and distributed-native.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 你有 5 億列 variant annotation 表，常見查詢是 <code>WHERE chrom='chr17' AND qual&gt;30</code>。哪個格式最適合？</p>
+<p data-lang="en"><strong>Q2.</strong> You have 500M variant annotation rows; typical query is <code>WHERE chrom='chr17' AND qual&gt;30</code>. Best format?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. TSV.gz</span><span data-lang="en">A. TSV.gz</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. Parquet，按 chrom 分區</span><span data-lang="en">B. Parquet, partitioned by chrom</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. HDF5 + gzip</span><span data-lang="en">C. HDF5 + gzip</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. Pickle</span><span data-lang="en">D. Pickle</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>Parquet 的 columnar 結構 + predicate pushdown 讓 <code>WHERE qual&gt;30</code> 只讀 qual 欄；按 chrom 分區後 <code>WHERE chrom='chr17'</code> 只開該目錄，其他分區檔案完全不開啟。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> Parquet's columnar layout + predicate pushdown means <code>WHERE qual&gt;30</code> only reads the qual column; partitioning by chrom means <code>WHERE chrom='chr17'</code> only opens that directory.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> Feather (Arrow IPC) 相對於 Parquet 的核心優勢是？</p>
+<p data-lang="en"><strong>Q3.</strong> Feather (Arrow IPC) vs Parquet — what's Feather's core advantage?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 讀寫速度更快、可 memory-map zero-copy，適合短期 cache</span><span data-lang="en">A. Faster read/write, memory-mappable zero-copy, ideal for short-term cache</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 壓縮率更高</span><span data-lang="en">B. Higher compression ratio</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 支援 predicate pushdown</span><span data-lang="en">C. Supports predicate pushdown</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 適合 PB 等級長期儲存</span><span data-lang="en">D. Ideal for PB-scale long-term storage</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>Feather 是 Arrow 在記憶體的 layout 直接存檔，幾乎免反序列化；但壓縮 / 長期儲存與跨版本相容性都不如 Parquet——所以實務上 Parquet 用於 long-term，Feather 用於 short-term cache 與跨語言交換。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> Feather is Arrow's in-memory layout flushed to disk — nearly zero deserialization. But compression and long-term/version-compat lag Parquet — so in practice Parquet = long-term, Feather = short-term cache & cross-language IPC.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="gpu-bioinformatics.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Prev">← 上一頁</span><span class="nav-title" data-zh="B3 · GPU 與生醫運算" data-en="B3 · GPU bioinformatics">B3 · GPU 與生醫運算</span></a>
+<a href="big-data-tables.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="C2 · 大型資料表處理" data-en="C2 · Big-data tables">C2 · 大型資料表處理</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · C1 生醫資料格式</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Format chooser logic
+function recommendFormat(){
+  const shape  = document.getElementById('fmtShape').value;
+  const access = document.getElementById('fmtAccess').value;
+  const lang   = document.getElementById('fmtLang').value;
+  const cloud  = document.getElementById('fmtCloud').value;
+  let rec = '', why = '';
+  if (shape === 'array') {
+    if (cloud === 'yes')         { rec = 'Zarr';   why = 'N-D array + cloud → chunked object store'; }
+    else if (access === 'random'){ rec = 'HDF5';   why = 'N-D array + local random tile access'; }
+    else                          { rec = 'HDF5';   why = 'Local N-D array, mature ecosystem'; }
+    if (lang === 'r' && access === 'random') why += ' (HDF5Array / DelayedArray in R)';
+  } else { // table
+    if (access === 'filter')         { rec = 'Parquet'; why = 'Columnar + predicate pushdown'; }
+    else if (access === 'streaming') { rec = 'Feather'; why = 'Fast linear scan, zero-copy mmap'; }
+    else                              { rec = 'Parquet'; why = 'Default tabular store, R/Py both read it'; }
+    if (cloud === 'yes')             { rec = 'Parquet'; why = 'Parquet on S3 + DuckDB/Arrow is the modern lakehouse pattern'; }
+  }
+  document.getElementById('fmtRec').textContent = 'recommendation: ' + rec;
+  document.getElementById('fmtWhy').textContent = 'reason: ' + why;
+}
+['fmtShape','fmtAccess','fmtLang','fmtCloud'].forEach(id =>
+  document.getElementById(id).addEventListener('change', recommendFormat));
+recommendFormat();
+</script>
+</body></html>

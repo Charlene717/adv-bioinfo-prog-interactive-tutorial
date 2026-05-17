@@ -1,0 +1,528 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>C3: 資料庫與 REST API · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK C · TOPIC 11 / 20</div>
+<h1 data-zh="資料庫與 REST API：把外部資料工程化" data-en="Databases & REST APIs: Engineering External Data">資料庫與 REST API：把外部資料工程化</h1>
+<p class="subtitle" data-lang="zh">SQL 不只是「資料庫人才學的東西」；當你的分析會被引用、會被另一個人重跑、會被 50 個樣本掃過，把資料放進 SQLite / PostgreSQL / DuckDB 比 CSV 散落 100 個資料夾要好得多。本章涵蓋 SQL essentials、SQLAlchemy / dbplyr、Ensembl / UniProt / E-utils REST API、與快取/重試策略。</p>
+<p class="subtitle" data-lang="en">SQL isn't just "for DBAs." Once your analysis gets cited, re-run by a colleague, or swept across 50 samples, putting data in SQLite / PostgreSQL / DuckDB beats 100 folders of stray CSVs. This chapter covers SQL essentials, SQLAlchemy / dbplyr, Ensembl / UniProt / E-utils REST APIs, plus caching and retry strategy.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼分析要靠資料庫？" data-en="Why bring databases into analysis?">為什麼分析要靠資料庫？</h2>
+<div data-lang="zh">
+<p>許多生醫資料分析的瓶頸不在演算法，而在「資料管理」：</p>
+<ul>
+<li>資料散落在 50 個 CSV，重複欄位、單位不一致；</li>
+<li>每次重跑都得手動爬 NCBI / Ensembl / STRING，遇上限速或斷線就要重來；</li>
+<li>樣本中繼資料和變異註釋分散在不同 Excel，沒人能保證版本一致。</li>
+</ul>
+<p>解法分兩條軸線：本地端用 <strong>SQL / 資料庫</strong>把資料正規化；對外部資料用 <strong>REST/GraphQL API + 快取</strong>把網路存取變可重現。本章把這兩條線整合。</p>
+</div>
+<div data-lang="en">
+<p>The bottleneck in many bio analyses isn't the algorithm — it's data management:</p>
+<ul>
+<li>Data scattered across 50 CSVs with overlapping columns and mismatched units;</li>
+<li>Re-runs require manually crawling NCBI / Ensembl / STRING — rate limits or network blips force restarts;</li>
+<li>Sample metadata and variant annotations live in disconnected Excel files; no one can prove the versions match.</li>
+</ul>
+<p>Two axes of solution: locally, use <strong>SQL/databases</strong> to normalize data; externally, use <strong>REST/GraphQL + caching</strong> to make network access reproducible. This chapter integrates both.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>取捨：</strong>不是每個分析都要 PostgreSQL。先用 SQLite / DuckDB (零組態)；當有多人寫入或需要併發，再升級到 PostgreSQL。</span>
+<span data-lang="en"><strong>Trade-off:</strong> Not every analysis needs PostgreSQL. Start with SQLite/DuckDB (zero config); upgrade to PostgreSQL when you need concurrency or multi-writer access.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: SQL essentials ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、生醫分析必備 SQL：JOIN、window function、index" data-en="I. Must-know SQL: JOIN, window functions, indexes">一、生醫分析必備 SQL：JOIN、window function、index</h2>
+<div data-lang="zh"><p>三類查詢在生醫分析裡反覆出現：(1) 將樣本表與變異表 <strong>JOIN</strong>；(2) 用 <strong>window function</strong> 算每個基因內變異的排名；(3) 對常用欄位建 <strong>index</strong> 讓查詢從 5 分鐘變 50 毫秒。</p></div>
+<div data-lang="en"><p>Three query patterns recur in bio analysis: (1) <strong>JOIN</strong> samples to variants; (2) <strong>window function</strong> for per-gene variant ranking; (3) <strong>index</strong>es to cut a 5-minute query down to 50 ms.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">joins.sql</button>
+<button class="code-tab-btn">window.sql</button>
+<button class="code-tab-btn">index.sql</button>
+<button class="code-tab-btn">explain.sql</button>
+</div>
+<div class="code-tab-content active"><span class="filename">joins.sql — sample × variant</span><pre><span class="comment">-- Find all high-quality variants in BRCA1 across all "tumor" samples</span>
+<span class="kw">SELECT</span> s.sample_id, s.tissue, v.chrom, v.pos, v.ref, v.alt, v.qual
+<span class="kw">FROM</span>   variants v
+<span class="kw">INNER JOIN</span> samples s   <span class="kw">USING</span> (sample_id)
+<span class="kw">INNER JOIN</span> gene_regions g <span class="kw">ON</span> v.chrom = g.chrom
+                            <span class="kw">AND</span> v.pos <span class="kw">BETWEEN</span> g.start <span class="kw">AND</span> g.end
+<span class="kw">WHERE</span>  g.gene_symbol = <span class="str">'BRCA1'</span>
+  <span class="kw">AND</span>  s.condition  = <span class="str">'tumor'</span>
+  <span class="kw">AND</span>  v.qual &gt; <span class="num">30</span>
+<span class="kw">ORDER BY</span> v.pos;
+</pre></div>
+<div class="code-tab-content"><span class="filename">window.sql — per-gene ranking</span><pre><span class="comment">-- Rank variants within each gene by quality; tag top-3</span>
+<span class="kw">SELECT</span> *
+<span class="kw">FROM</span> (
+  <span class="kw">SELECT</span> v.*, g.gene_symbol,
+         <span class="func">RANK</span>() <span class="kw">OVER</span> (<span class="kw">PARTITION BY</span> g.gene_symbol <span class="kw">ORDER BY</span> v.qual <span class="kw">DESC</span>) <span class="kw">AS</span> rk,
+         <span class="func">AVG</span>(v.qual) <span class="kw">OVER</span> (<span class="kw">PARTITION BY</span> g.gene_symbol) <span class="kw">AS</span> gene_mean_qual
+  <span class="kw">FROM</span> variants v
+  <span class="kw">JOIN</span> gene_regions g <span class="kw">ON</span> v.chrom=g.chrom
+                       <span class="kw">AND</span> v.pos <span class="kw">BETWEEN</span> g.start <span class="kw">AND</span> g.end
+) ranked
+<span class="kw">WHERE</span> rk &lt;= <span class="num">3</span>;
+</pre></div>
+<div class="code-tab-content"><span class="filename">index.sql — make it fast</span><pre><span class="comment">-- Without index: scan 50M rows = ~5 minutes</span>
+<span class="comment">-- With index:    binary lookup  = ~50 ms</span>
+
+<span class="kw">CREATE INDEX</span> idx_variants_pos
+  <span class="kw">ON</span> variants(chrom, pos);
+
+<span class="kw">CREATE INDEX</span> idx_variants_sample
+  <span class="kw">ON</span> variants(sample_id);
+
+<span class="comment">-- Composite index on (chrom, pos) supports both range and equality.</span>
+<span class="comment">-- Column order matters: put high-cardinality / equality column first.</span>
+
+<span class="comment">-- For Postgres + range queries:</span>
+<span class="kw">CREATE INDEX</span> idx_variants_gist
+  <span class="kw">ON</span> variants <span class="kw">USING</span> gist(int4range(pos, pos+<span class="num">1</span>));
+</pre></div>
+<div class="code-tab-content"><span class="filename">explain.sql — read the plan</span><pre><span class="comment">-- Always check the plan before declaring a query "slow"</span>
+<span class="kw">EXPLAIN</span> <span class="kw">ANALYZE</span>
+<span class="kw">SELECT</span> chrom, <span class="func">COUNT</span>(*) <span class="kw">FROM</span> variants <span class="kw">WHERE</span> qual &gt; <span class="num">30</span>
+<span class="kw">GROUP BY</span> chrom;
+
+<span class="comment">-- Look for:</span>
+<span class="comment">--   Seq Scan       → no index used (often the bug)</span>
+<span class="comment">--   Index Scan     → good</span>
+<span class="comment">--   Hash Aggregate → expected for GROUP BY</span>
+<span class="comment">--   Rows removed   → high count = predicate not pushed down to scan</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 3: Local DBs — SQLite, DuckDB, PostgreSQL, MongoDB ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、本地端資料庫：SQLite / DuckDB / PostgreSQL / MongoDB" data-en="II. Local DBs: SQLite / DuckDB / PostgreSQL / MongoDB">二、本地端資料庫：SQLite / DuckDB / PostgreSQL / MongoDB</h2>
+<div data-lang="zh"><p>四種代表性選擇：</p>
+<ul>
+<li><strong>SQLite</strong> — 單檔、零組態、OLTP 偏向；當「可攜分析資料庫」很完美。</li>
+<li><strong>DuckDB</strong> — 同為單檔零組態，但是 columnar OLAP；分析查詢比 SQLite 快 10-100×。</li>
+<li><strong>PostgreSQL</strong> — 多人寫入、嚴格事務、extensions 多 (<code>pgvector</code> 存 embeddings、<code>PostGIS</code> 存空間)。</li>
+<li><strong>MongoDB</strong> — 文件式、適合巢狀 JSON (e.g. clinvar 變異註釋、ClinGen 表型)。</li>
+</ul></div>
+<div data-lang="en"><p>Four representative choices:</p>
+<ul>
+<li><strong>SQLite</strong> — single file, zero config, OLTP-leaning. Perfect as a "portable analysis DB."</li>
+<li><strong>DuckDB</strong> — same single-file zero-config story, but columnar OLAP. 10-100× faster on analytic queries.</li>
+<li><strong>PostgreSQL</strong> — multi-writer, strict transactions, rich extensions (<code>pgvector</code> for embeddings, <code>PostGIS</code> for spatial).</li>
+<li><strong>MongoDB</strong> — document store, good for nested JSON (e.g. ClinVar variant annotations, ClinGen phenotypes).</li>
+</ul></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">sqlite.py</button>
+<button class="code-tab-btn">postgres.py</button>
+<button class="code-tab-btn">dbplyr.R</button>
+<button class="code-tab-btn">mongo.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">sqlite.py + SQLAlchemy</span><pre><span class="kw">from</span> sqlalchemy <span class="kw">import</span> create_engine, text
+<span class="kw">import</span> pandas <span class="kw">as</span> pd
+
+eng = create_engine(<span class="str">"sqlite:///genomics.db"</span>)
+
+<span class="comment"># Bulk ingest a TSV → table</span>
+pd.read_csv(<span class="str">"variants.tsv"</span>, sep=<span class="str">"\t"</span>).to_sql(
+    <span class="str">"variants"</span>, eng, if_exists=<span class="str">"replace"</span>, index=<span class="kw">False</span>, chunksize=<span class="num">100_000</span>)
+
+<span class="comment"># Parameterised query — never string-format SQL!</span>
+<span class="kw">with</span> eng.connect() <span class="kw">as</span> con:
+    df = pd.read_sql(text(<span class="str">"""
+        SELECT chrom, pos, qual FROM variants
+        WHERE sample_id = :sid AND qual &gt; :q
+    """</span>), con, params={<span class="str">"sid"</span>:<span class="str">"S001"</span>, <span class="str">"q"</span>:<span class="num">30</span>})
+</pre></div>
+<div class="code-tab-content"><span class="filename">postgres.py + psycopg + pgvector</span><pre><span class="kw">import</span> psycopg
+<span class="kw">from</span> pgvector.psycopg <span class="kw">import</span> register_vector
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">with</span> psycopg.connect(<span class="str">"postgresql://user:pw@host/genomics"</span>) <span class="kw">as</span> con:
+    register_vector(con)
+    con.execute(<span class="str">"""
+        CREATE TABLE IF NOT EXISTS gene_embeddings (
+            gene_id text PRIMARY KEY,
+            emb     vector(1536)
+        )
+    """</span>)
+    <span class="comment"># Store an OpenAI / Geneformer embedding</span>
+    emb = np.random.rand(<span class="num">1536</span>).astype(<span class="str">"float32"</span>)
+    con.execute(<span class="str">"INSERT INTO gene_embeddings VALUES (%s, %s)"</span>, (<span class="str">"BRCA1"</span>, emb))
+
+    <span class="comment"># Approximate-nearest-neighbour: which 5 genes are closest to BRCA1?</span>
+    rows = con.execute(<span class="str">"""
+        SELECT gene_id FROM gene_embeddings
+        ORDER BY emb &lt;-&gt; %s   -- L2 distance
+        LIMIT 5
+    """</span>, (emb,)).fetchall()
+</pre></div>
+<div class="code-tab-content"><span class="filename">dbplyr.R — write dplyr, run SQL</span><pre><span class="kw">library</span>(DBI); <span class="kw">library</span>(RPostgres)
+<span class="kw">library</span>(dplyr); <span class="kw">library</span>(dbplyr)
+
+con &lt;- dbConnect(Postgres(), dbname=<span class="str">"genomics"</span>, host=<span class="str">"localhost"</span>,
+                 user=Sys.getenv(<span class="str">"PG_USER"</span>),
+                 password=Sys.getenv(<span class="str">"PG_PW"</span>))
+
+variants &lt;- tbl(con, <span class="str">"variants"</span>)
+samples  &lt;- tbl(con, <span class="str">"samples"</span>)
+
+q &lt;- variants %&gt;%
+       <span class="func">filter</span>(qual &gt; <span class="num">30</span>) %&gt;%
+       <span class="func">inner_join</span>(samples, by=<span class="str">"sample_id"</span>) %&gt;%
+       <span class="func">filter</span>(condition == <span class="str">"tumor"</span>) %&gt;%
+       <span class="func">count</span>(chrom)
+
+show_query(q)     <span class="comment"># inspect generated SQL</span>
+result &lt;- <span class="func">collect</span>(q)  <span class="comment"># pull into R only at the end</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">mongo.py — nested variant annotations</span><pre><span class="kw">from</span> pymongo <span class="kw">import</span> MongoClient
+
+client = MongoClient(<span class="str">"mongodb://localhost:27017"</span>)
+col = client.clinvar.variants
+
+<span class="comment"># Each document = one variant + all nested annotations (no joins needed)</span>
+col.insert_one({
+    <span class="str">"chrom"</span>: <span class="str">"chr17"</span>, <span class="str">"pos"</span>: <span class="num">7578406</span>, <span class="str">"ref"</span>: <span class="str">"C"</span>, <span class="str">"alt"</span>: <span class="str">"T"</span>,
+    <span class="str">"clinvar"</span>: {<span class="str">"sig"</span>: <span class="str">"Pathogenic"</span>, <span class="str">"reviews"</span>: <span class="num">3</span>},
+    <span class="str">"gene"</span>:    {<span class="str">"symbol"</span>: <span class="str">"TP53"</span>, <span class="str">"effect"</span>: <span class="str">"missense"</span>},
+    <span class="str">"populations"</span>: [
+        {<span class="str">"name"</span>:<span class="str">"gnomAD_AFR"</span>, <span class="str">"af"</span>:<span class="num">0.0001</span>},
+        {<span class="str">"name"</span>:<span class="str">"gnomAD_EAS"</span>, <span class="str">"af"</span>:<span class="num">0.0008</span>},
+    ],
+})
+
+<span class="comment"># Dot-notation query on nested fields</span>
+hits = col.find({<span class="str">"clinvar.sig"</span>:<span class="str">"Pathogenic"</span>, <span class="str">"populations.af"</span>:{<span class="str">"$gt"</span>:<span class="num">0.0005</span>}})
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: REST + GraphQL ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、REST 與 GraphQL — Ensembl、UniProt、E-utils、STRING、GTEx" data-en="III. REST & GraphQL — Ensembl, UniProt, E-utils, STRING, GTEx">三、REST 與 GraphQL — Ensembl、UniProt、E-utils、STRING、GTEx</h2>
+<div data-lang="zh"><p>常用 API 速覽：</p>
+<ul>
+<li><strong>Ensembl REST</strong> — gene lookup、variant、xrefs；同時提供 <strong>GraphQL</strong> (新)。</li>
+<li><strong>UCSC REST</strong> — 基因組座標、track 資料。</li>
+<li><strong>UniProt</strong> — 蛋白序列、結構域、翻譯後修飾。</li>
+<li><strong>NCBI E-utils</strong> — PubMed、GenBank、SRA；強制 3 req/s (有 API key 可到 10)。</li>
+<li><strong>STRING</strong> — 蛋白互動網路。</li>
+<li><strong>GTEx</strong> — 組織特異性表現。</li>
+<li><strong>GEOquery / TCGAbiolinks</strong> — R 端 wrapper，把 GEO/TCGA 下載抽象成函式。</li>
+</ul></div>
+<div data-lang="en"><p>API quick reference:</p>
+<ul>
+<li><strong>Ensembl REST</strong> — gene lookup, variants, xrefs; also offers <strong>GraphQL</strong> (newer).</li>
+<li><strong>UCSC REST</strong> — genomic coordinates, track data.</li>
+<li><strong>UniProt</strong> — protein sequences, domains, PTMs.</li>
+<li><strong>NCBI E-utils</strong> — PubMed, GenBank, SRA; hard-limited to 3 req/s (10 with API key).</li>
+<li><strong>STRING</strong> — protein-protein interaction networks.</li>
+<li><strong>GTEx</strong> — tissue-specific expression.</li>
+<li><strong>GEOquery / TCGAbiolinks</strong> — R-side wrappers that abstract GEO/TCGA downloads into functions.</li>
+</ul></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">ensembl.py</button>
+<button class="code-tab-btn">graphql.py</button>
+<button class="code-tab-btn">eutils.py</button>
+<button class="code-tab-btn">tcga.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">ensembl.py — REST + retry + cache</span><pre><span class="kw">import</span> requests, requests_cache
+<span class="kw">from</span> tenacity <span class="kw">import</span> retry, stop_after_attempt, wait_exponential
+
+<span class="comment"># Persistent cache — same URL returns cached response across runs</span>
+requests_cache.install_cache(<span class="str">".ensembl_cache"</span>, expire_after=<span class="num">86400</span>)
+
+<span class="kw">@</span><span class="func">retry</span>(stop=stop_after_attempt(<span class="num">5</span>),
+       wait=wait_exponential(<span class="num">1</span>, <span class="num">2</span>, <span class="num">30</span>))
+<span class="kw">def</span> <span class="func">lookup_symbol</span>(symbol: str) -&gt; dict:
+    r = requests.get(
+        <span class="str">f"https://rest.ensembl.org/lookup/symbol/human/{symbol}"</span>,
+        headers={<span class="str">"Accept"</span>:<span class="str">"application/json"</span>}, timeout=<span class="num">10</span>)
+    r.raise_for_status()
+    <span class="kw">return</span> r.json()
+
+info = lookup_symbol(<span class="str">"BRCA1"</span>)
+<span class="func">print</span>(info[<span class="str">"id"</span>], info[<span class="str">"seq_region_name"</span>], info[<span class="str">"start"</span>])
+</pre></div>
+<div class="code-tab-content"><span class="filename">graphql.py — Ensembl GraphQL</span><pre><span class="kw">import</span> requests
+
+query = <span class="str">"""
+query GeneInfo($symbol: String!) {
+  gene(symbol: $symbol, genome: "homo_sapiens") {
+    id
+    name
+    biotype
+    transcripts { id biotype length }
+  }
+}
+"""</span>
+r = requests.post(<span class="str">"https://beta.ensembl.org/api/graphql"</span>,
+                  json={<span class="str">"query"</span>: query, <span class="str">"variables"</span>: {<span class="str">"symbol"</span>:<span class="str">"BRCA1"</span>}})
+data = r.json()[<span class="str">"data"</span>][<span class="str">"gene"</span>]
+
+<span class="comment"># Big win over REST: ask for exactly the fields you need in one round trip</span>
+<span class="comment"># Avoids the N+1 problem of "fetch gene then fetch each transcript"</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">eutils.py — PubMed batch retrieval</span><pre><span class="kw">import</span> requests, time
+
+<span class="comment"># NCBI: 3 req/s without key, 10 with key</span>
+BASE = <span class="str">"https://eutils.ncbi.nlm.nih.gov/entrez/eutils"</span>
+API_KEY = <span class="str">"your_key_here"</span>
+
+<span class="kw">def</span> <span class="func">esearch</span>(term: str, retmax: int = <span class="num">100</span>) -&gt; <span class="kw">list</span>[str]:
+    r = requests.get(<span class="str">f"{BASE}/esearch.fcgi"</span>, params={
+        <span class="str">"db"</span>:<span class="str">"pubmed"</span>, <span class="str">"term"</span>:term, <span class="str">"retmax"</span>:retmax,
+        <span class="str">"retmode"</span>:<span class="str">"json"</span>, <span class="str">"api_key"</span>:API_KEY})
+    <span class="kw">return</span> r.json()[<span class="str">"esearchresult"</span>][<span class="str">"idlist"</span>]
+
+<span class="kw">def</span> <span class="func">efetch_batch</span>(ids: <span class="kw">list</span>[str]) -&gt; str:
+    <span class="comment"># Batch up to 200 IDs in one call — respect rate limit</span>
+    chunks = [ids[i:i+<span class="num">200</span>] <span class="kw">for</span> i <span class="kw">in</span> <span class="func">range</span>(<span class="num">0</span>, <span class="func">len</span>(ids), <span class="num">200</span>)]
+    out = []
+    <span class="kw">for</span> ch <span class="kw">in</span> chunks:
+        r = requests.get(<span class="str">f"{BASE}/efetch.fcgi"</span>, params={
+            <span class="str">"db"</span>:<span class="str">"pubmed"</span>, <span class="str">"id"</span>:<span class="str">","</span>.join(ch),
+            <span class="str">"rettype"</span>:<span class="str">"abstract"</span>, <span class="str">"retmode"</span>:<span class="str">"text"</span>,
+            <span class="str">"api_key"</span>:API_KEY})
+        out.append(r.text)
+        time.sleep(<span class="num">0.11</span>)         <span class="comment"># keep under 10 req/s</span>
+    <span class="kw">return</span> <span class="str">"\n"</span>.join(out)
+</pre></div>
+<div class="code-tab-content"><span class="filename">tcga.R — TCGAbiolinks + GEOquery</span><pre><span class="kw">library</span>(TCGAbiolinks)
+
+<span class="comment"># Download all TCGA-BRCA RNA-seq quantification</span>
+query &lt;- GDCquery(
+  project    = <span class="str">"TCGA-BRCA"</span>,
+  data.category   = <span class="str">"Transcriptome Profiling"</span>,
+  data.type       = <span class="str">"Gene Expression Quantification"</span>,
+  workflow.type   = <span class="str">"STAR - Counts"</span>)
+GDCdownload(query)
+data &lt;- GDCprepare(query)   <span class="comment"># SummarizedExperiment object</span>
+
+<span class="kw">library</span>(GEOquery)
+gse &lt;- getGEO(<span class="str">"GSE12345"</span>, GSEMatrix=<span class="kw">TRUE</span>)
+expr &lt;- <span class="func">exprs</span>(gse[[<span class="num">1</span>]])
+</pre></div>
+</div>
+
+<div class="callout danger"><span class="callout-icon">🚫</span><div>
+<span data-lang="zh"><strong>常見錯誤：</strong>用 <code>for symbol in 5000_genes: requests.get(...)</code> 沒有 cache 也沒有 retry——晚上 9 點被 NCBI ban 一小時就無法在 deadline 前重跑。一律先寫 <code>requests_cache</code> + <code>tenacity</code>。</span>
+<span data-lang="en"><strong>Common mistake:</strong> <code>for symbol in 5000_genes: requests.get(...)</code> with no cache, no retry — get IP-banned at 9pm and miss the deadline. Always start with <code>requests_cache</code> + <code>tenacity</code>.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 5: Comparison Table ===== -->
+<section class="section">
+<div class="section-label" data-zh="比較" data-en="COMPARISON">比較</div>
+<h2 data-zh="四、SQLite vs PostgreSQL vs DuckDB vs MongoDB" data-en="IV. SQLite vs PostgreSQL vs DuckDB vs MongoDB">四、SQLite vs PostgreSQL vs DuckDB vs MongoDB</h2>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="特性" data-en="Feature">特性</th>
+<th>SQLite</th>
+<th>PostgreSQL</th>
+<th>DuckDB</th>
+<th>MongoDB</th>
+</tr></thead><tbody>
+<tr><td data-zh="架構" data-en="Arch">架構</td>
+  <td data-zh="嵌入式單檔" data-en="Embedded, single file">嵌入式單檔</td>
+  <td data-zh="Server, 多連線" data-en="Server, multi-conn">Server, 多連線</td>
+  <td data-zh="嵌入式單檔" data-en="Embedded, single file">嵌入式單檔</td>
+  <td data-zh="Server, 文件式" data-en="Server, document">Server, 文件式</td></tr>
+<tr><td data-zh="儲存模型" data-en="Storage model">儲存模型</td>
+  <td>row-based</td>
+  <td>row-based</td>
+  <td>columnar</td>
+  <td>JSON / BSON</td></tr>
+<tr><td data-zh="最強場景" data-en="Sweet spot">最強場景</td>
+  <td data-zh="OLTP、可攜分析 DB" data-en="OLTP, portable analysis DB">OLTP、可攜分析 DB</td>
+  <td data-zh="多人寫入、生產系統" data-en="Multi-writer, production">多人寫入、生產系統</td>
+  <td data-zh="OLAP、Parquet 直查" data-en="OLAP, query Parquet directly">OLAP、Parquet 直查</td>
+  <td data-zh="巢狀文件、模式多變" data-en="Nested docs, schema-flexible">巢狀文件、模式多變</td></tr>
+<tr><td data-zh="ANN / 向量" data-en="ANN / vector">ANN / 向量</td>
+  <td>❌</td>
+  <td data-zh="✅ pgvector" data-en="✅ pgvector">✅ pgvector</td>
+  <td data-zh="○ (extension 中)" data-en="○ (extension WIP)">○</td>
+  <td>✅</td></tr>
+<tr><td data-zh="生醫例子" data-en="Bio example">生醫例子</td>
+  <td data-zh="樣本清單、QC 結果" data-en="Sample sheets, QC results">樣本清單、QC 結果</td>
+  <td data-zh="LIMS、cohort DB" data-en="LIMS, cohort DB">LIMS、cohort DB</td>
+  <td data-zh="變異註釋表跨檔查詢" data-en="Variant tables, cross-file query">變異註釋跨檔查詢</td>
+  <td data-zh="ClinVar、表型本體" data-en="ClinVar, phenotype ontologies">ClinVar、表型本體</td></tr>
+</tbody></table>
+</section>
+
+<!-- ===== Interactive Panel: API request builder ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="五、API 請求建構器" data-en="V. API Request Builder">五、API 請求建構器</h2>
+
+<div class="interactive-panel">
+<h3 data-zh="挑 endpoint 與參數，產生 URL 與回應結構" data-en="Pick an endpoint and parameter, get the URL and response shape">挑 endpoint 與參數，產生 URL 與回應結構</h3>
+<div class="slider-group">
+<label><span data-zh="API" data-en="API">API</span></label>
+<select id="apiSel">
+  <option value="ensembl">Ensembl REST — lookup symbol</option>
+  <option value="ucsc">UCSC — genomic region</option>
+  <option value="uniprot">UniProt — by accession</option>
+  <option value="eutils">NCBI E-utils — esearch PubMed</option>
+  <option value="string">STRING — interaction partners</option>
+</select>
+</div>
+<div class="slider-group">
+<label><span data-zh="參數值" data-en="Parameter">參數值</span></label>
+<input type="text" id="apiParam" value="BRCA1" style="padding:.4rem;border:1px solid #ccc;border-radius:6px;font-family:inherit">
+</div>
+<div class="sim-stats">
+  <span class="sim-stat info"  id="apiUrl"   style="white-space:pre-wrap">URL: —</span>
+  <span class="sim-stat pass"  id="apiShape" style="white-space:pre-wrap">Response shape: —</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 7: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪一招？" data-en="Which tool do I reach for?">該用哪一招？</h2>
+
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要一個能寄給合作者的分析資料庫」</strong> → SQLite (跨平台單檔)</span><span data-lang="en"><strong>"Need a single-file analysis DB I can email to a collaborator"</strong> → SQLite</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我要在 200 個 Parquet 上跑 SQL」</strong> → DuckDB</span><span data-lang="en"><strong>"Run SQL across 200 Parquet files"</strong> → DuckDB</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「實驗室多人寫入 LIMS、需要併發」</strong> → PostgreSQL</span><span data-lang="en"><strong>"Lab LIMS with multiple writers"</strong> → PostgreSQL</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「gene embeddings 相似度查詢」</strong> → PostgreSQL + pgvector</span><span data-lang="en"><strong>"Gene-embedding similarity search"</strong> → PostgreSQL + pgvector</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「巢狀 JSON 變異註釋、欄位不固定」</strong> → MongoDB</span><span data-lang="en"><strong>"Nested-JSON variant annotations, schema in flux"</strong> → MongoDB</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「批次拉 5000 個基因的 Ensembl 資料」</strong> → REST + requests_cache + tenacity；多欄位用 GraphQL</span><span data-lang="en"><strong>"Pull Ensembl data for 5000 genes"</strong> → REST + requests_cache + tenacity; many fields → GraphQL</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q1.</strong> 對 5000 萬列 <code>variants(chrom, pos)</code> 表，下列何者讓區段查詢速度提升最大？</p>
+<p data-lang="en"><strong>Q1.</strong> On a 50M-row <code>variants(chrom, pos)</code> table, what speeds up range queries most?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 加更多記憶體</span><span data-lang="en">A. Add more RAM</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. <code>CREATE INDEX idx ON variants(chrom, pos)</code></span><span data-lang="en">B. <code>CREATE INDEX idx ON variants(chrom, pos)</code></span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 用 SELECT * 而不是 SELECT 部分欄位</span><span data-lang="en">C. SELECT * instead of selected columns</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 把資料存成 pickle</span><span data-lang="en">D. Pickle the data instead</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>沒有 index 時，<code>WHERE chrom='chr17' AND pos BETWEEN ...</code> 必須 sequential scan 全表；建索引後變成 B-tree 二分搜尋，從 5 分鐘變成毫秒級。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> Without an index, <code>WHERE chrom='chr17' AND pos BETWEEN ...</code> requires a full sequential scan. A composite B-tree index turns it into a binary-search range scan — minutes become milliseconds.</div>
+</div>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q2.</strong> 你寫了 <code>for g in genes: requests.get(...)</code> 拉 5000 個基因；第二天又跑了一次，結果 NCBI 把你 ban 了。最該加的是？</p>
+<p data-lang="en"><strong>Q2.</strong> Your script does <code>for g in genes: requests.get(...)</code> for 5000 genes; you re-run the next day and NCBI bans you. What should you add first?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 改成 GraphQL</span><span data-lang="en">A. Switch to GraphQL</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 改成 async/await</span><span data-lang="en">B. Switch to async/await</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. requests_cache + 適當的 rate-limit/retry (tenacity)</span><span data-lang="en">C. requests_cache + proper rate-limit/retry (tenacity)</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 把所有資料先下載到 SQLite 再查</span><span data-lang="en">D. Download all data into SQLite first</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>第一要務是「不打第二次相同的請求」(cache) 與「打太快會自動退讓」(rate-limit/retry)。async 在這裡只會讓 ban 來得更快。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Priority one: don't repeat identical requests (cache) and back off when rate-limited (tenacity). Async without these gets you banned faster.</div>
+</div>
+
+<div class="quiz-q" data-correct="D">
+<p data-lang="zh"><strong>Q3.</strong> 何時 MongoDB 比 PostgreSQL 更合適？</p>
+<p data-lang="en"><strong>Q3.</strong> When does MongoDB beat PostgreSQL?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 你需要嚴格事務 (ACID)</span><span data-lang="en">A. You need strict ACID transactions</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 你的資料是固定 schema 的 5 欄整數表</span><span data-lang="en">B. Fixed-schema 5-column integer table</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 你要做大量 multi-table JOIN</span><span data-lang="en">C. Heavy multi-table JOINs</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. ClinVar 風格的巢狀變異註釋、欄位每月變化</span><span data-lang="en">D. ClinVar-style nested variant annotations with schema changing monthly</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 D。</strong>MongoDB 的優勢是「文件式 + 模式彈性」，適合 schema 還在演化、深巢狀的 JSON。固定 schema、需 JOIN/ACID 仍然選 PostgreSQL。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: D.</strong> MongoDB shines for nested documents and evolving schemas. Fixed schemas, joins, and ACID still belong with PostgreSQL.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="big-data-tables.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Prev">← 上一頁</span><span class="nav-title" data-zh="C2 · 大型資料表處理" data-en="C2 · Big-data tables">C2 · 大型資料表處理</span></a>
+<a href="data-validation-pipelines.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="C4 · 資料驗證與 ETL" data-en="C4 · Data validation & ETL">C4 · 資料驗證與 ETL</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · C3 資料庫與 REST API</footer>
+
+<script src="i18n.js"></script>
+<script>
+// API request builder
+const apis = {
+  ensembl: {
+    url: p => `https://rest.ensembl.org/lookup/symbol/human/${encodeURIComponent(p)}?expand=1`,
+    shape: `{ id, display_name, biotype,
+  seq_region_name, start, end, strand,
+  Transcript:[ {id, biotype, length, ...} ] }`
+  },
+  ucsc: {
+    url: p => `https://api.genome.ucsc.edu/getData/track?genome=hg38;track=knownGene;chrom=${encodeURIComponent(p)}`,
+    shape: `{ chrom, knownGene:[ {chrom, txStart, txEnd, name, ...} ] }`
+  },
+  uniprot: {
+    url: p => `https://rest.uniprot.org/uniprotkb/${encodeURIComponent(p)}.json`,
+    shape: `{ primaryAccession, organism, sequence:{value, length},
+  features:[ {type, location, description} ] }`
+  },
+  eutils: {
+    url: p => `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(p)}&retmode=json`,
+    shape: `{ esearchresult: { count, retmax,
+  idlist:["pmid1","pmid2", ...] } }`
+  },
+  string: {
+    url: p => `https://string-db.org/api/json/interaction_partners?identifiers=${encodeURIComponent(p)}&species=9606`,
+    shape: `[ {preferredName_A, preferredName_B, score,
+  ncbiTaxonId, ...} ]`
+  },
+};
+
+function updateApi(){
+  const k = document.getElementById('apiSel').value;
+  const p = document.getElementById('apiParam').value.trim() || 'BRCA1';
+  document.getElementById('apiUrl').textContent   = 'URL: ' + apis[k].url(p);
+  document.getElementById('apiShape').textContent = 'Response shape:\n' + apis[k].shape;
+}
+['apiSel','apiParam'].forEach(id =>
+  document.getElementById(id).addEventListener('input', updateApi));
+document.getElementById('apiSel').addEventListener('change', updateApi);
+updateApi();
+</script>
+</body></html>

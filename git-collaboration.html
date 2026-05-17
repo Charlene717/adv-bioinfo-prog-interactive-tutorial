@@ -1,0 +1,582 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>D1: Git 進階協作 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK D · TOPIC 13 / 20</div>
+<h1 data-zh="Git 進階協作：rebase、hooks、LFS、Flow 模型" data-en="Advanced Git Collaboration: rebase, hooks, LFS, flows">Git 進階協作：rebase、hooks、LFS、Flow 模型</h1>
+<p class="subtitle" data-lang="zh">從 commit/push 升級到實驗室級協作——rebase vs merge、interactive squash、reflog 救援、pre-commit 自動化、Git LFS 管 FASTQ/BAM、GitHub Flow vs GitFlow、PR 禮儀與 conventional commits。</p>
+<p class="subtitle" data-lang="en">From commit/push to lab-grade collaboration — rebase vs merge, interactive squash, reflog rescue, pre-commit automation, Git LFS for FASTQ/BAM, GitHub Flow vs GitFlow, PR etiquette, conventional commits.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼研究 git 需要「進階化」？" data-en="Why must research git workflows level up?">為什麼研究 git 需要「進階化」？</h2>
+<div data-lang="zh">
+<p>大多數實驗室的 git 用法只有 <code>git add -A && git commit -m "update"</code>。短期能用，但當你 (a) 要把 PR 提交給 nf-core，(b) 重現一年前的 figure，(c) 接手別人寫到一半的分析——三種痛點就會浮現：</p>
+<ul>
+<li><strong>歷史一團亂：</strong>50 個 "fix typo" commit 混在一起，無法 bisect 找出哪一行害 reviewer 抱怨結果不對。</li>
+<li><strong>不能 push：</strong>把 80GB 的 BAM 不小心 commit 進來，整個 repo 變成黑洞，clone 要 3 小時。</li>
+<li><strong>分支管理失控：</strong>main / dev / new-figure / fix-bug-from-2024-12-03 全部 diverge，merge conflict 解到崩潰。</li>
+</ul>
+<p>本章六個主題：<strong>rebase 與互動式重整</strong>、<strong>reflog 救命網</strong>、<strong>pre-commit hooks</strong>、<strong>Git LFS</strong>、<strong>Flow 模型</strong>、<strong>PR 禮儀</strong>。</p>
+</div>
+<div data-lang="en">
+<p>Most lab git usage is just <code>git add -A && git commit -m "update"</code>. Works short-term, but breaks when (a) you submit a PR to nf-core, (b) reproduce a figure from last year, (c) inherit half-written analysis. Three pains emerge:</p>
+<ul>
+<li><strong>Messy history:</strong> 50 "fix typo" commits jumbled together — impossible to bisect when a reviewer complains the numbers changed.</li>
+<li><strong>Cannot push:</strong> An 80GB BAM accidentally committed turns the repo into a black hole — clones take 3 hours.</li>
+<li><strong>Branch chaos:</strong> main / dev / new-figure / fix-bug-from-2024-12-03 all diverge, merge conflicts mount.</li>
+</ul>
+<p>The six topics: <strong>rebase + interactive squash</strong>, <strong>reflog safety net</strong>, <strong>pre-commit hooks</strong>, <strong>Git LFS</strong>, <strong>flow models</strong>, <strong>PR etiquette</strong>.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>心法：</strong>commit 是給「未來的你」與「reviewer」的訊息，不是給機器。一個 commit = 一個邏輯改動 + 一句說得清楚的訊息。</span>
+<span data-lang="en"><strong>Mindset:</strong> A commit is a message to future-you and to reviewers, not to the machine. One commit = one logical change + one clear message.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Rebase vs Merge ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Rebase vs Merge — 何時用哪個？" data-en="I. Rebase vs Merge — when each is correct">一、Rebase vs Merge — 何時用哪個？</h2>
+<div data-lang="zh"><p><code>merge</code> 保留分支歷史 (產生 merge commit)，<code>rebase</code> 把你的 commit 重新「貼」到目標分支頂端，產生線性歷史。原則：<strong>本地、私人分支用 rebase；已 push 給別人的 commit 不要 rebase</strong>。</p></div>
+<div data-lang="en"><p><code>merge</code> preserves branch history (creates a merge commit); <code>rebase</code> replays your commits on top of the target, yielding linear history. Rule: <strong>rebase locally on private branches; never rebase commits others have pulled</strong>.</p></div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="操作" data-en="Operation">操作</th>
+<th data-zh="歷史形狀" data-en="History shape">歷史形狀</th>
+<th data-zh="衝突解決" data-en="Conflict resolution">衝突解決</th>
+<th data-zh="是否安全於共享分支" data-en="Safe on shared branch?">是否安全於共享分支</th>
+<th data-zh="典型用途" data-en="Typical use">典型用途</th>
+</tr></thead><tbody>
+<tr><td><code>git merge</code></td><td data-zh="保留分支 + merge commit" data-en="Branches preserved + merge commit">保留分支 + merge commit</td><td data-zh="一次解完" data-en="Resolve once">一次解完</td><td>✅</td><td data-zh="把 feature 合回 main" data-en="Merge feature into main">把 feature 合回 main</td></tr>
+<tr><td><code>git rebase</code></td><td data-zh="線性 (改寫 SHA)" data-en="Linear (rewrites SHAs)">線性 (改寫 SHA)</td><td data-zh="可能 commit 接 commit 反覆解" data-en="May resolve commit by commit">可能反覆解</td><td>❌</td><td data-zh="清理私人分支再開 PR" data-en="Tidy private branch before PR">清理私人分支再開 PR</td></tr>
+<tr><td><code>git merge --squash</code></td><td data-zh="單一 commit 進 main" data-en="Single commit into main">單一 commit 進 main</td><td data-zh="一次解完" data-en="Resolve once">一次解完</td><td>✅</td><td data-zh="把 50 個 WIP commit 壓成 1 個" data-en="Squash 50 WIP commits to 1">壓成單一 commit</td></tr>
+<tr><td><code>cherry-pick</code></td><td data-zh="把單一 commit 套到另一分支" data-en="Apply single commit to another branch">單一 commit 移植</td><td data-zh="只解該 commit 的衝突" data-en="Only that commit's conflicts">只該 commit</td><td>✅</td><td data-zh="hotfix 從 main 拉到 release branch" data-en="Hotfix from main to release">hotfix 跨分支移植</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">rebase.sh</button>
+<button class="code-tab-btn">interactive.sh</button>
+<button class="code-tab-btn">cherry-pick.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">rebase.sh — keep your branch on top of main</span><pre><span class="comment"># You're on feature/scrnaseq-qc, main has moved forward.</span>
+<span class="comment"># Goal: replay your commits on the new main tip.</span>
+git fetch origin
+git checkout feature/scrnaseq-qc
+git rebase origin/main           <span class="comment"># replays each of your commits</span>
+
+<span class="comment"># If a conflict appears:</span>
+<span class="comment">#   1. edit the file, git add &lt;file&gt;</span>
+<span class="comment">#   2. git rebase --continue</span>
+<span class="comment">#   3. or: git rebase --abort to bail out</span>
+
+<span class="comment"># After rebase, your branch's SHAs changed → force-push (use --force-with-lease!)</span>
+git push --force-with-lease origin feature/scrnaseq-qc
+</pre></div>
+<div class="code-tab-content"><span class="filename">interactive.sh — squash + reword 50 WIP commits</span><pre><span class="comment"># Show last 10 commits in editor for editing</span>
+git rebase -i HEAD~10
+
+<span class="comment"># Editor opens; change "pick" to:</span>
+<span class="comment">#   s / squash   = combine into previous commit</span>
+<span class="comment">#   r / reword   = keep commit, edit message</span>
+<span class="comment">#   d / drop     = delete this commit</span>
+<span class="comment">#   e / edit     = pause to amend code</span>
+<span class="comment">#   f / fixup    = like squash but discard the message</span>
+
+<span class="comment"># Example before:</span>
+<span class="comment"># pick a1b2c3d add qc function</span>
+<span class="comment"># pick e4f5g6h fix typo</span>
+<span class="comment"># pick i7j8k9l fix typo again</span>
+<span class="comment"># pick m0n1o2p add tests</span>
+
+<span class="comment"># After editing:</span>
+<span class="comment"># pick a1b2c3d add qc function</span>
+<span class="comment"># f    e4f5g6h fix typo</span>
+<span class="comment"># f    i7j8k9l fix typo again</span>
+<span class="comment"># pick m0n1o2p add tests</span>
+
+<span class="comment"># Result: 4 → 2 clean commits</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">cherry-pick.sh — hotfix to release branch</span><pre><span class="comment"># A critical fix landed on main as commit abc1234.</span>
+<span class="comment"># You need it on the v1.2-release branch too.</span>
+git checkout v1.2-release
+git cherry-pick abc1234
+
+<span class="comment"># Cherry-pick a range</span>
+git cherry-pick abc1234^..def5678
+
+<span class="comment"># Cherry-pick without auto-commit (lets you edit before commit)</span>
+git cherry-pick -n abc1234
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>The Golden Rule of Rebase：</strong>千萬不要 rebase 已 push 到 shared branch 的 commit。如果同事已從 origin/feature 拉下來，你 rebase 後 force-push，他們本機歷史會與遠端衝突，可能遺失工作。</span>
+<span data-lang="en"><strong>The Golden Rule of Rebase:</strong> Never rebase commits already pushed to a shared branch. If a teammate pulled origin/feature, your rebase + force-push leaves their history conflicting with the remote — they may lose work.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 3: Reflog ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、Reflog — 你的時光機" data-en="II. Reflog — your safety net">二、Reflog — 你的時光機</h2>
+<div data-lang="zh"><p>Reflog 紀錄你的 HEAD 在過去 90 天 (預設) 移動過的所有位置——包括被 <code>reset --hard</code> 砍掉的 commit、被 rebase 改寫掉的 SHA。<strong>只要 commit 曾在你本機存在，就一定救得回來</strong>。</p></div>
+<div data-lang="en"><p>Reflog records every position HEAD has been in the last 90 days (default) — including commits killed by <code>reset --hard</code> or rewritten by rebase. <strong>If a commit ever existed locally, you can recover it</strong>.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">recover.sh</button>
+<button class="code-tab-btn">undo-rebase.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">recover.sh — undo a fatal reset --hard</span><pre><span class="comment"># Disaster: you ran `git reset --hard HEAD~5` and lost 5 commits</span>
+git reflog
+<span class="comment"># Output:</span>
+<span class="comment"># 8c4f1a2 HEAD@{0}: reset: moving to HEAD~5</span>
+<span class="comment"># 3d9e0b7 HEAD@{1}: commit: add UMAP figure  ← what you want</span>
+<span class="comment"># 7a1c2d8 HEAD@{2}: commit: refactor QC</span>
+
+git reset --hard HEAD@{1}     <span class="comment"># back to the good state</span>
+<span class="comment"># All "lost" commits and files are restored</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">undo-rebase.sh — recover from a bad rebase</span><pre>git rebase -i HEAD~20         <span class="comment"># oops, dropped 3 important commits</span>
+
+git reflog
+<span class="comment"># 1a2b3c4 HEAD@{0}: rebase finished</span>
+<span class="comment"># f5e6d7c HEAD@{1}: rebase: started</span>
+<span class="comment"># 9c8b7a6 HEAD@{2}: commit: pre-rebase state  ← restore this</span>
+
+git reset --hard HEAD@{2}
+<span class="comment"># Branch is back to exactly where it was before rebase</span>
+</pre></div>
+</div>
+
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>口訣：</strong>把 <code>git reflog</code> 想成「git 操作的瀏覽器歷史」。當你下了破壞性指令 (reset/rebase/checkout -f) 之後恐慌時，<strong>先深呼吸，然後 reflog</strong>。</span>
+<span data-lang="en"><strong>Mantra:</strong> Think of <code>git reflog</code> as your "browser history of git operations." After any destructive command (reset/rebase/checkout -f), <strong>breathe, then reflog</strong>.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 4: Hooks + pre-commit framework ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、Hooks 與 pre-commit framework" data-en="III. Hooks & the pre-commit framework">三、Hooks 與 pre-commit framework</h2>
+<div data-lang="zh"><p>Git hooks 是 commit/push 等事件觸發的 shell scripts，放在 <code>.git/hooks/</code>。但本機 hook 不能版本化、不能跨平台 — 因此社群用 <a href="https://pre-commit.com">pre-commit framework</a> (Python 工具) 來把 hooks 設定寫進 <code>.pre-commit-config.yaml</code>，commit 前自動跑 black / ruff / styler / nbstripout 等檢查器。</p></div>
+<div data-lang="en"><p>Git hooks are shell scripts triggered by events (commit/push), stored in <code>.git/hooks/</code>. But local hooks aren't versioned and aren't portable — the community uses the <a href="https://pre-commit.com">pre-commit framework</a> (a Python tool) to declare hooks in <code>.pre-commit-config.yaml</code>, running black / ruff / styler / nbstripout automatically before each commit.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">.pre-commit-config.yaml</button>
+<button class="code-tab-btn">install.sh</button>
+<button class="code-tab-btn">raw-hook.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">.pre-commit-config.yaml</span><pre><span class="comment"># Run with: pre-commit run --all-files</span>
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: [<span class="str">'--maxkb=500'</span>]    <span class="comment"># block files &gt; 500KB</span>
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+
+  - repo: https://github.com/lorenzwalthert/precommit
+    rev: v0.4.3
+    hooks:
+      - id: style-files          <span class="comment"># R: styler</span>
+      - id: lintr                 <span class="comment"># R: lintr</span>
+
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout            <span class="comment"># strip Jupyter output before commit</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">install.sh</span><pre><span class="comment"># One-time setup per developer</span>
+pip install pre-commit            <span class="comment"># or: brew install pre-commit / uv tool install pre-commit</span>
+pre-commit install                <span class="comment"># wires .git/hooks/pre-commit</span>
+
+<span class="comment"># Run all hooks against all files (CI uses this too)</span>
+pre-commit run --all-files
+
+<span class="comment"># Bypass (rarely): only for emergencies</span>
+git commit --no-verify -m <span class="str">"WIP: stash before going home"</span>
+
+<span class="comment"># Auto-update hook versions</span>
+pre-commit autoupdate
+</pre></div>
+<div class="code-tab-content"><span class="filename">raw-hook.sh — old-school .git/hooks/pre-commit</span><pre><span class="comment">#!/bin/sh</span>
+<span class="comment"># .git/hooks/pre-commit  (must be chmod +x)</span>
+<span class="comment"># Refuse commit if any staged Python file fails ruff</span>
+
+files=$(git diff --cached --name-only --diff-filter=ACM | grep <span class="str">'\.py$'</span>)
+<span class="kw">if</span> [ -n <span class="str">"$files"</span> ]; <span class="kw">then</span>
+    ruff check $files || {
+        <span class="func">echo</span> <span class="str">"❌ ruff failed; commit aborted"</span>
+        <span class="kw">exit</span> 1
+    }
+<span class="kw">fi</span>
+<span class="kw">exit</span> 0
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: Git LFS, submodules ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="四、Git LFS、submodules、subtree" data-en="IV. Git LFS, submodules, subtree">四、Git LFS、submodules、subtree</h2>
+<div data-lang="zh">
+<p>Git 是為原始碼設計的，每次 commit 整個 binary file 會把 repo 撐爆。生醫資訊有兩個常見需求：</p>
+<ul><li><strong>大檔案 (FASTQ/BAM/VCF/.h5ad)：</strong>用 <strong>Git LFS</strong>，repo 只存 pointer，實際內容存在 LFS server。</li>
+<li><strong>共用其他 repo (e.g. 共用 reference pipeline)：</strong>用 <strong>submodule</strong> (link to specific SHA) 或 <strong>subtree</strong> (copy into your repo)。</li></ul>
+</div>
+<div data-lang="en">
+<p>Git was built for source code; committing binaries blows up the repo. Two common bioinformatics needs:</p>
+<ul><li><strong>Large files (FASTQ/BAM/VCF/.h5ad):</strong> use <strong>Git LFS</strong> — repo holds a pointer, real bytes live on the LFS server.</li>
+<li><strong>Share another repo (e.g. common reference pipeline):</strong> use <strong>submodule</strong> (link to a specific SHA) or <strong>subtree</strong> (copy into your repo).</li></ul>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">git-lfs.sh</button>
+<button class="code-tab-btn">submodule.sh</button>
+<button class="code-tab-btn">subtree.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">git-lfs.sh</span><pre><span class="comment"># One-time install</span>
+git lfs install
+
+<span class="comment"># Track binary extensions — writes to .gitattributes (commit this!)</span>
+git lfs track <span class="str">"*.bam"</span> <span class="str">"*.bai"</span> <span class="str">"*.fastq.gz"</span> <span class="str">"*.h5ad"</span> <span class="str">"*.vcf.gz"</span>
+git add .gitattributes
+
+<span class="comment"># Now binaries are stored as pointers</span>
+git add tests/data/mini.bam
+git commit -m <span class="str">"add test BAM via LFS"</span>
+git push
+
+<span class="comment"># Pointer file looks like:</span>
+<span class="comment">#   version https://git-lfs.github.com/spec/v1</span>
+<span class="comment">#   oid sha256:abc123...</span>
+<span class="comment">#   size 1048576</span>
+
+<span class="comment"># Caveat: GitHub free LFS quota is small (1GB storage, 1GB bandwidth/month).</span>
+<span class="comment"># Heavy users go to Zenodo, S3, or self-hosted LFS server.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">submodule.sh</span><pre><span class="comment"># Pin to a specific SHA of an external repo</span>
+git submodule add https://github.com/nf-core/modules external/nf-core-modules
+git commit -m <span class="str">"add nf-core/modules as submodule"</span>
+
+<span class="comment"># Clone with submodules</span>
+git clone --recurse-submodules &lt;url&gt;
+
+<span class="comment"># Update to newer SHA in submodule</span>
+cd external/nf-core-modules
+git checkout main && git pull
+cd ../..
+git add external/nf-core-modules
+git commit -m <span class="str">"bump nf-core/modules"</span>
+
+<span class="comment"># Pros: small repo; clear separation. Cons: extra clone step, confusing for newcomers.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">subtree.sh — copy another repo into yours</span><pre><span class="comment"># Pull in another repo's history under prefix=external/utils</span>
+git subtree add --prefix=external/utils \
+    https://github.com/lab/utils.git main --squash
+
+<span class="comment"># Later, pull upstream changes</span>
+git subtree pull --prefix=external/utils \
+    https://github.com/lab/utils.git main --squash
+
+<span class="comment"># Push your local changes back upstream</span>
+git subtree push --prefix=external/utils \
+    https://github.com/lab/utils.git contrib
+
+<span class="comment"># Pros: clone is one step; no extra config. Cons: bigger repo, harder upgrades.</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: Flow models + PR ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 5" data-en="TOPIC 5">主題 5</div>
+<h2 data-zh="五、Flow 模型、PR 禮儀、conventional commits" data-en="V. Flow models, PR etiquette, conventional commits">五、Flow 模型、PR 禮儀、conventional commits</h2>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="模型" data-en="Model">模型</th>
+<th data-zh="分支數" data-en="Branches">分支數</th>
+<th data-zh="複雜度" data-en="Complexity">複雜度</th>
+<th data-zh="release 模式" data-en="Release">release 模式</th>
+<th data-zh="適合誰" data-en="Best for">適合誰</th>
+</tr></thead><tbody>
+<tr><td><strong>GitHub Flow</strong></td><td data-zh="main + feature/*" data-en="main + feature/*">main + feature/*</td><td data-zh="低" data-en="Low">低</td><td data-zh="連續部署" data-en="Continuous deploy">連續部署</td><td data-zh="多數實驗室 / nf-core" data-en="Most labs / nf-core">多數實驗室 / nf-core</td></tr>
+<tr><td><strong>GitFlow</strong></td><td data-zh="main + develop + release/* + hotfix/*" data-en="main + develop + release/* + hotfix/*">main + develop + release/* + hotfix/*</td><td data-zh="高" data-en="High">高</td><td data-zh="排程版本" data-en="Scheduled releases">排程版本</td><td data-zh="商業軟體、需多版本並存" data-en="Commercial software, multi-version support">商業軟體</td></tr>
+<tr><td><strong>Trunk-based</strong></td><td data-zh="只有 main + 短命 feature" data-en="main + short-lived feature">main + 短命 feature</td><td data-zh="低" data-en="Low">低</td><td data-zh="每天部署" data-en="Daily deploy">每天部署</td><td data-zh="工程化團隊、強 CI" data-en="Engineering teams, strong CI">工程化團隊</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">conventional-commits.txt</button>
+<button class="code-tab-btn">branch-protection.yml</button>
+<button class="code-tab-btn">signed-commits.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">conventional-commits.txt</span><pre><span class="comment"># Format: &lt;type&gt;(&lt;scope&gt;): &lt;subject&gt;</span>
+<span class="comment"># Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert</span>
+
+feat(qc): add doublet detection via scrublet
+fix(io): handle gzipped VCF on stdin
+docs(readme): clarify CUDA install steps
+perf(align): batch BAM writes, 3× speedup
+test(qc): add fixtures for tiny scRNA-seq
+ci: bump python matrix to 3.11/3.12
+chore(deps): bump pysam to 0.22
+
+<span class="comment"># Why? Tools auto-generate CHANGELOG.md and bump semver:</span>
+<span class="comment">#   feat  → minor version bump (1.2.0 → 1.3.0)</span>
+<span class="comment">#   fix   → patch version bump  (1.2.0 → 1.2.1)</span>
+<span class="comment">#   BREAKING CHANGE: footer → major bump</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">branch-protection.yml — GitHub repo settings</span><pre><span class="comment"># Recommended for any analysis repo with &gt; 1 author</span>
+protection:
+  required_pull_request_reviews:
+    required_approving_review_count: 1
+    dismiss_stale_reviews: <span class="kw">true</span>
+  required_status_checks:
+    strict: <span class="kw">true</span>
+    contexts:
+      - <span class="str">"pytest (3.11)"</span>
+      - <span class="str">"pytest (3.12)"</span>
+      - <span class="str">"pre-commit"</span>
+      - <span class="str">"R CMD check"</span>
+  enforce_admins: <span class="kw">false</span>
+  restrictions: <span class="kw">null</span>
+  required_signatures: <span class="kw">true</span>      <span class="comment"># GPG-signed commits only</span>
+  allow_force_pushes: <span class="kw">false</span>
+  allow_deletions: <span class="kw">false</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">signed-commits.sh</span><pre><span class="comment"># Generate or import a GPG key (or use SSH signing in modern git)</span>
+gpg --full-generate-key
+gpg --list-secret-keys --keyid-format=long
+<span class="comment"># Tell git to use it</span>
+git config --global user.signingkey ABCD1234EF567890
+git config --global commit.gpgsign true
+git config --global tag.gpgsign true
+
+<span class="comment"># Modern alternative: SSH key signing (git 2.34+)</span>
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+
+<span class="comment"># Verify</span>
+git log --show-signature -1
+</pre></div>
+</div>
+
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>PR 禮儀 (生醫資訊版)：</strong>(1) PR &lt; 400 行最容易被審；(2) 描述「為什麼」而不是「做了什麼」(diff 已說了 what)；(3) 附上跑過的 reproducible 結果或截圖；(4) 一個 PR 一個邏輯改動 — 別把 feature + refactor + style 混在一起；(5) reviewer 給 nit 標記時可以拒絕，但給 must 標記時要修。</span>
+<span data-lang="en"><strong>PR etiquette (bioinformatics flavor):</strong> (1) Keep PRs &lt; 400 LOC for fastest review; (2) describe the "why," not the "what" (the diff already says what); (3) include reproducible results or screenshots; (4) one PR = one logical change — don't mix feature + refactor + style; (5) reviewers' "nit:" comments can be declined; "must:" comments must be addressed.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 7: Monorepo + interactive ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 6" data-en="TOPIC 6">主題 6</div>
+<h2 data-zh="六、Monorepo (nf-core 模式) + 指令模擬器" data-en="VI. Monorepo (nf-core style) + command simulator">六、Monorepo + 指令模擬器</h2>
+<div data-lang="zh"><p>nf-core 把所有 pipeline 與 modules 放在 GitHub <code>nf-core</code> 組織下的數十個 repos，並用統一的 <code>nf-core/tools</code> 來 lint、scaffold、release。這是「組織級 monorepo + 多 repo 混合」的成功案例。實驗室自己用時可考慮：所有 paper 分析放一個 <code>lab-analyses/</code> repo，每篇 paper 一個資料夾，共用 <code>lab-utils/</code> submodule。</p></div>
+<div data-lang="en"><p>nf-core hosts dozens of repos under the <code>nf-core</code> GitHub organization, unified by <code>nf-core/tools</code> for lint/scaffold/release — a successful "org-level monorepo + multi-repo hybrid." For your lab: consider one <code>lab-analyses/</code> repo with a folder per paper, plus a shared <code>lab-utils/</code> submodule.</p></div>
+
+<div class="interactive-panel">
+<h3 data-zh="Git 指令 → 效果模擬器" data-en="Git Command → Effect Simulator">Git 指令 → 效果模擬器</h3>
+<p data-lang="zh" style="font-size:.92rem">點擊指令，看分支圖在前/後的變化。每個指令都附帶說明何時該用、何時不該用。</p>
+<p data-lang="en" style="font-size:.92rem">Click a command to see the branch graph before / after. Each includes when to use and when to avoid.</p>
+<div class="sim-controls" style="display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0">
+  <button class="sim-btn" data-cmd="merge">git merge feature</button>
+  <button class="sim-btn" data-cmd="rebase">git rebase main</button>
+  <button class="sim-btn" data-cmd="squash">git merge --squash</button>
+  <button class="sim-btn" data-cmd="cherry">git cherry-pick</button>
+  <button class="sim-btn" data-cmd="reset">git reset --hard HEAD~2</button>
+  <button class="sim-btn" data-cmd="reflog">git reflog + reset</button>
+</div>
+<pre id="gitGraph" style="background:#0f172a;color:#e2e8f0;padding:.8rem;border-radius:6px;font-size:.85rem;min-height:160px">Click a command above to see graph + explanation.</pre>
+<div class="sim-stats">
+  <span class="sim-stat info" id="gitWhen">when: —</span>
+  <span class="sim-stat fail" id="gitAvoid">avoid: —</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 8: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個 git 工具？" data-en="Which git tool do I need?">該用哪個 git 工具？</h2>
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我的私人分支有 50 個 WIP commit」</strong> → <code>git rebase -i</code> squash 後再開 PR</span><span data-lang="en"><strong>"My private branch has 50 WIP commits"</strong> → <code>git rebase -i</code> + squash before opening PR</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「我剛 reset --hard 砍掉一週工作」</strong> → <code>git reflog</code> + <code>git reset --hard HEAD@{N}</code></span><span data-lang="en"><strong>"I just reset --hard and lost a week"</strong> → <code>git reflog</code> + <code>git reset --hard HEAD@{N}</code></span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「BAM/FASTQ 要進版控」</strong> → <code>git lfs track</code>，或丟去 Zenodo / S3</span><span data-lang="en"><strong>"BAM/FASTQ must be version-controlled"</strong> → <code>git lfs track</code>, or offload to Zenodo / S3</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「想自動跑 black/ruff 在 commit 前」</strong> → <code>pre-commit</code> framework + <code>.pre-commit-config.yaml</code></span><span data-lang="en"><strong>"Auto-run black/ruff before commit"</strong> → <code>pre-commit</code> + <code>.pre-commit-config.yaml</code></span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「hotfix 已在 main，要拉到 release/v1.2」</strong> → <code>git cherry-pick &lt;sha&gt;</code></span><span data-lang="en"><strong>"Hotfix on main, need it on release/v1.2"</strong> → <code>git cherry-pick &lt;sha&gt;</code></span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「實驗室小 paper-repo」</strong> → GitHub Flow；<strong>「商業軟體多版本」</strong> → GitFlow；<strong>「強 CI 工程團隊」</strong> → trunk-based</span><span data-lang="en"><strong>"Small lab paper repo"</strong> → GitHub Flow; <strong>"commercial multi-version"</strong> → GitFlow; <strong>"strong-CI engineering team"</strong> → trunk-based</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q1.</strong> 同事已從 <code>origin/feature</code> 拉下來工作。你接著對 <code>feature</code> 做 <code>git rebase main</code> 然後 force-push。預期會發生？</p>
+<p data-lang="en"><strong>Q1.</strong> Your teammate pulled <code>origin/feature</code>. You then run <code>git rebase main</code> on feature and force-push. What happens?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 同事的本機分支自動更新成新歷史</span><span data-lang="en">A. Their local branch auto-updates to the new history</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 同事的本機歷史與 remote 衝突，下次 pull 會 diverge 或遺失 commit</span><span data-lang="en">B. Their local history conflicts with remote; next pull diverges or loses commits</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. GitHub 會 block force-push</span><span data-lang="en">C. GitHub blocks the force-push</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 沒影響，rebase 只動 SHA 不動內容</span><span data-lang="en">D. No impact — rebase only changes SHAs</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>The Golden Rule of Rebase：不要 rebase 已分享給別人的 commit。要嘛開新分支做 squash merge，要嘛跟團隊溝通並 enable branch protection 防止 force-push。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> The Golden Rule of Rebase: never rebase commits others have pulled. Use squash-merge on a new branch, or enable branch protection blocking force-pushes.</div>
+</div>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q2.</strong> 下列何者最適合用 Git LFS？</p>
+<p data-lang="en"><strong>Q2.</strong> Which file is best stored via Git LFS?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. <code>analysis.py</code> (3KB Python script)</span><span data-lang="en">A. <code>analysis.py</code> (3KB Python script)</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. <code>README.md</code></span><span data-lang="en">B. <code>README.md</code></span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. <code>tests/data/mini.bam</code> (5MB test fixture)</span><span data-lang="en">C. <code>tests/data/mini.bam</code> (5MB test fixture)</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. <code>requirements.txt</code></span><span data-lang="en">D. <code>requirements.txt</code></span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>LFS 為 binary / 大檔案而設計，BAM 是典型例子。文字檔有 git diff 才有意義 — 不要進 LFS。注意 GitHub 免費 LFS 額度小，超過要付費或自架。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> LFS is designed for binaries / large files; BAM is canonical. Text files need git diff — don't LFS them. Note GitHub's free LFS quota is small; heavy users pay or self-host.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> <code>pre-commit</code> framework 相對於原生 <code>.git/hooks/pre-commit</code> 的主要優點？</p>
+<p data-lang="en"><strong>Q3.</strong> Main advantage of the <code>pre-commit</code> framework over native <code>.git/hooks/pre-commit</code>?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 設定寫進 <code>.pre-commit-config.yaml</code> 可版本化、跨平台、跨語言</span><span data-lang="en">A. Config in <code>.pre-commit-config.yaml</code> is versioned, cross-platform, multi-language</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 跑得比較快</span><span data-lang="en">B. Runs faster</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 是 git 原生功能</span><span data-lang="en">C. It's built into git</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 能 block 大檔案被 push</span><span data-lang="en">D. Can block large files from being pushed</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>原生 hooks 在 <code>.git/hooks/</code> 不會被 commit，每個 developer 要手動裝；pre-commit framework 把設定寫進 repo 根目錄，<code>pre-commit install</code> 即可同步，且支援 Python/R/JS/shell 共存。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> Native hooks live in <code>.git/hooks/</code> which isn't committed — each dev installs manually. The framework keeps config at repo root, syncs via <code>pre-commit install</code>, and supports Python/R/JS/shell in one place.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="data-validation-pipelines.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="C4 · 資料驗證 pipeline" data-en="C4 · Data Validation Pipelines">C4 · 資料驗證 pipeline</span></a>
+<a href="testing-strategies.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="D2 · 測試策略" data-en="D2 · Testing Strategies">D2 · 測試策略</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · D1 Git 進階協作</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Interactive: Git command simulator
+const gitCommands = {
+  merge: {
+    graph: `Before:                After git merge feature:
+  main:  A---B---C         main:  A---B---C-------M
+                 \\                        \\     /
+  feat:           D---E    feat:           D---E
+                          (M = merge commit; both histories preserved)`,
+    when: 'when: integrating a feature into main, preserve branch context',
+    avoid: 'avoid: when you want linear history with no merge commits'
+  },
+  rebase: {
+    graph: `Before:                After git rebase main:
+  main:  A---B---C         main:  A---B---C
+                 \\                         \\
+  feat:           D---E    feat:            D'---E'
+                          (D, E rewritten on top of C; SHAs changed)`,
+    when: 'when: tidying a private branch before opening a PR',
+    avoid: 'avoid: rebasing commits already pushed and pulled by teammates'
+  },
+  squash: {
+    graph: `Before:                After git merge --squash feature:
+  main:  A---B---C         main:  A---B---C---S
+                 \\                                (S contains D+E+F as ONE commit)
+  feat:           D---E---F`,
+    when: 'when: collapsing many WIP commits to one clean commit on main',
+    avoid: 'avoid: when individual commits carry useful bisect information'
+  },
+  cherry: {
+    graph: `Before:                After git cherry-pick F:
+  main:  A---B---C         main:  A---B---C---F'
+                 \\                         \\
+  feat:           D---E---F  feat:           D---E---F
+                          (F replayed onto main, new SHA F')`,
+    when: 'when: backporting a hotfix to a release branch',
+    avoid: 'avoid: when you actually want the whole branch (use merge)'
+  },
+  reset: {
+    graph: `Before:                After git reset --hard HEAD~2:
+  main:  A---B---C---D---E   main:  A---B---C
+         (HEAD at E)                 (HEAD at C; D & E "lost" — still in reflog!)
+
+  DANGER: destructive. Lost commits live in reflog for 90 days.`,
+    when: 'when: discarding local mistakes BEFORE pushing',
+    avoid: 'avoid: on shared branches — use git revert instead'
+  },
+  reflog: {
+    graph: `Scenario: you ran reset --hard and lost commits D, E.
+  $ git reflog
+  c1f3a4b HEAD@{0}: reset: moving to HEAD~2
+  e3d8a7f HEAD@{1}: commit: add UMAP figure   ← restore this
+  9b2c5e1 HEAD@{2}: commit: refactor QC
+
+  $ git reset --hard HEAD@{1}
+  → all "lost" commits and files are back.`,
+    when: 'when: recovering from reset --hard, bad rebase, or accidental checkout -f',
+    avoid: 'avoid: relying on reflog after 90 days — entries are pruned'
+  }
+};
+
+document.querySelectorAll('.sim-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const cmd = btn.dataset.cmd;
+    const info = gitCommands[cmd];
+    document.getElementById('gitGraph').textContent = info.graph;
+    document.getElementById('gitWhen').textContent = info.when;
+    document.getElementById('gitAvoid').textContent = info.avoid;
+  });
+});
+// Trigger initial state
+document.querySelector('.sim-btn[data-cmd="merge"]').click();
+</script>
+</body></html>

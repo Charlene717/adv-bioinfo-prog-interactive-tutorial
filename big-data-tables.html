@@ -1,0 +1,485 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>C2: 大型資料表處理 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK C · TOPIC 10 / 20</div>
+<h1 data-zh="大型資料表處理：Polars、DuckDB、Dask、Spark" data-en="Big-Data Tables: Polars, DuckDB, Dask, Spark">大型資料表處理：Polars、DuckDB、Dask、Spark</h1>
+<p class="subtitle" data-lang="zh">當 pandas 撐到 10GB 就 OOM、dplyr 撐到 1 億列就跑半天——你要的不是更大的機器，是更聰明的工具：lazy execution、columnar engine、out-of-core、distributed compute。</p>
+<p class="subtitle" data-lang="en">When pandas OOMs at 10GB and dplyr crawls at 100M rows — you don't need a bigger machine, you need smarter tools: lazy execution, columnar engines, out-of-core processing, distributed compute.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼 pandas / dplyr 撐不住了？" data-en="Why pandas/dplyr stop scaling">為什麼 pandas / dplyr 撐不住了？</h2>
+<div data-lang="zh">
+<p>pandas 與 dplyr 的設計前提是「資料能完整放入記憶體」。一旦資料量超過 RAM / 2 (pandas 在中間步驟會複製)，你會碰到：</p>
+<ul>
+<li><strong>OOM crash：</strong><code>MemoryError</code> 或被 OS 殺掉。</li>
+<li><strong>單核心瓶頸：</strong>pandas 預設只用一個 CPU 核心，64 核機器形同浪費。</li>
+<li><strong>Eager 執行：</strong>每一步都立即實體化中間結果，無法整體最佳化。</li>
+</ul>
+<p>四類解法：<strong>Polars</strong> (in-RAM 但 Rust + lazy + columnar)、<strong>DuckDB</strong> (in-process OLAP、SQL on Parquet)、<strong>Dask / Arrow Dataset</strong> (out-of-core，磁碟分塊)、<strong>Spark / Hail / Glow</strong> (跨機器分散式)。</p>
+</div>
+<div data-lang="en">
+<p>pandas and dplyr assume the dataset fits in RAM. Once you exceed RAM/2 (pandas duplicates during intermediate steps), you hit:</p>
+<ul>
+<li><strong>OOM crash:</strong> <code>MemoryError</code> or the OS kills the process.</li>
+<li><strong>Single-core bottleneck:</strong> pandas uses one CPU by default — a 64-core box sits idle.</li>
+<li><strong>Eager execution:</strong> Every step materializes intermediates, blocking whole-query optimization.</li>
+</ul>
+<p>Four solution classes: <strong>Polars</strong> (in-RAM Rust + lazy + columnar), <strong>DuckDB</strong> (in-process OLAP, SQL on Parquet), <strong>Dask / Arrow Dataset</strong> (out-of-core, disk chunks), <strong>Spark / Hail / Glow</strong> (multi-machine distributed).</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>實務優先順序：</strong>單機 &lt; 50GB → Polars 或 DuckDB；單機 50GB-1TB → DuckDB on Parquet 或 Dask；跨機器 / variant calling 全基因組 → Spark / Hail。Spark 不一定總是答案。</span>
+<span data-lang="en"><strong>Pragmatic order:</strong> Single machine &lt;50GB → Polars or DuckDB; 50GB-1TB → DuckDB on Parquet or Dask; multi-machine / whole-genome variant work → Spark/Hail. Spark is not always the answer.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Polars ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Polars — Rust + lazy 的新世代 DataFrame" data-en="I. Polars — Rust + lazy next-gen DataFrame">一、Polars — Rust + lazy 的新世代 DataFrame</h2>
+<div data-lang="zh"><p>Polars 用 Rust 寫核心，原生多執行緒、Arrow 記憶體格式、SIMD 向量化。最大的概念差異是 <strong>lazy mode</strong>：你寫 <code>LazyFrame</code> 操作會先建立 query plan，再一次最佳化執行 (像 SQL 的 query optimizer)。實測 5-20× 快於 pandas，且用同等 RAM。</p></div>
+<div data-lang="en"><p>Polars's Rust core is natively multithreaded, Arrow-formatted, and SIMD-vectorized. The big conceptual shift is <strong>lazy mode</strong>: operations on a <code>LazyFrame</code> build a query plan that is optimized as a whole before execution (like a SQL optimizer). Empirically 5-20× faster than pandas at similar RAM.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">eager.py</button>
+<button class="code-tab-btn">lazy.py</button>
+<button class="code-tab-btn">streaming.py</button>
+<button class="code-tab-btn">vs_pandas.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">eager.py — basic API</span><pre><span class="kw">import</span> polars <span class="kw">as</span> pl
+
+df = pl.read_csv(<span class="str">"variants.tsv"</span>, separator=<span class="str">"\t"</span>)
+out = (df
+       .<span class="func">filter</span>(pl.col(<span class="str">"qual"</span>) &gt; <span class="num">30</span>)
+       .<span class="func">group_by</span>(<span class="str">"chrom"</span>)
+       .<span class="func">agg</span>([
+           pl.col(<span class="str">"pos"</span>).count().alias(<span class="str">"n"</span>),
+           pl.col(<span class="str">"qual"</span>).mean().alias(<span class="str">"mean_q"</span>),
+       ])
+       .<span class="func">sort</span>(<span class="str">"chrom"</span>))
+<span class="func">print</span>(out)
+</pre></div>
+<div class="code-tab-content"><span class="filename">lazy.py — query plan, then collect</span><pre><span class="kw">import</span> polars <span class="kw">as</span> pl
+
+<span class="comment"># scan_*  → LazyFrame (no I/O yet)</span>
+lf = pl.scan_parquet(<span class="str">"variants/*.parquet"</span>)
+
+plan = (lf
+        .<span class="func">filter</span>(pl.col(<span class="str">"qual"</span>) &gt; <span class="num">30</span>)
+        .<span class="func">join</span>(pl.scan_parquet(<span class="str">"gene_annotations.parquet"</span>),
+              on=[<span class="str">"chrom"</span>, <span class="str">"pos"</span>], how=<span class="str">"left"</span>)
+        .<span class="func">group_by</span>(<span class="str">"gene_id"</span>)
+        .<span class="func">agg</span>(pl.col(<span class="str">"qual"</span>).mean()))
+
+<span class="func">print</span>(plan.explain())   <span class="comment"># inspect optimized plan</span>
+result = plan.collect()  <span class="comment"># NOW it runs (with predicate/projection pushdown)</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">streaming.py — bigger than RAM</span><pre><span class="kw">import</span> polars <span class="kw">as</span> pl
+
+<span class="comment"># streaming=True → process chunks, never load all at once</span>
+result = (pl.scan_csv(<span class="str">"huge_variants.tsv.gz"</span>, separator=<span class="str">"\t"</span>)
+          .<span class="func">filter</span>(pl.col(<span class="str">"qual"</span>) &gt; <span class="num">30</span>)
+          .<span class="func">group_by</span>(<span class="str">"chrom"</span>)
+          .<span class="func">agg</span>(pl.col(<span class="str">"pos"</span>).count())
+          .collect(streaming=<span class="kw">True</span>))    <span class="comment"># &lt;-- key flag</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">vs_pandas.py — side by side</span><pre><span class="comment"># Same query: count variants per chrom with qual &gt; 30</span>
+
+<span class="comment"># pandas</span>
+<span class="kw">import</span> pandas <span class="kw">as</span> pd
+df = pd.read_csv(<span class="str">"v.tsv"</span>, sep=<span class="str">"\t"</span>)
+df[df.qual &gt; <span class="num">30</span>].groupby(<span class="str">"chrom"</span>).size()
+
+<span class="comment"># polars (eager)</span>
+<span class="kw">import</span> polars <span class="kw">as</span> pl
+df = pl.read_csv(<span class="str">"v.tsv"</span>, separator=<span class="str">"\t"</span>)
+df.<span class="func">filter</span>(pl.col(<span class="str">"qual"</span>)&gt;<span class="num">30</span>).group_by(<span class="str">"chrom"</span>).<span class="func">len</span>()
+
+<span class="comment"># polars (lazy) — ~10× faster on 100M rows</span>
+(pl.scan_csv(<span class="str">"v.tsv"</span>, separator=<span class="str">"\t"</span>)
+   .<span class="func">filter</span>(pl.col(<span class="str">"qual"</span>)&gt;<span class="num">30</span>)
+   .group_by(<span class="str">"chrom"</span>).<span class="func">len</span>()
+   .collect())
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 3: DuckDB ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、DuckDB — In-process 的 SQL 神器" data-en="II. DuckDB — In-process SQL powerhouse">二、DuckDB — In-process 的 SQL 神器</h2>
+<div data-lang="zh">
+<p>DuckDB 是「SQLite for analytics」：嵌入式、零組態、單檔。但骨子裡是 columnar OLAP 引擎，能對 Parquet / CSV / Arrow 直接下 SQL，跳過資料庫的 ETL 環節。最強的兩個特點：</p>
+<ul>
+<li><strong>SQL on files：</strong><code>SELECT * FROM 'variants/*.parquet'</code> 直接跑，不必先 import。</li>
+<li><strong>Zero-copy with Pandas/Polars/Arrow：</strong>把 DataFrame 當 SQL 表查詢。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p>DuckDB is "SQLite for analytics" — embedded, zero-config, single file. But internally it's a columnar OLAP engine that runs SQL directly on Parquet/CSV/Arrow, skipping the usual DB ETL. Two killer features:</p>
+<ul>
+<li><strong>SQL on files:</strong> <code>SELECT * FROM 'variants/*.parquet'</code> works directly — no import needed.</li>
+<li><strong>Zero-copy with Pandas/Polars/Arrow:</strong> query a DataFrame as if it were a SQL table.</li>
+</ul>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">basic.py</button>
+<button class="code-tab-btn">sql_files.py</button>
+<button class="code-tab-btn">interop.py</button>
+<button class="code-tab-btn">duckdb.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">basic.py</span><pre><span class="kw">import</span> duckdb
+
+<span class="comment"># In-memory by default; pass a filename for persistent DB</span>
+con = duckdb.connect(<span class="str">"genomics.duckdb"</span>)
+
+con.execute(<span class="str">"""
+    CREATE TABLE variants AS
+    SELECT * FROM read_csv_auto('variants.tsv', delim='\t')
+"""</span>)
+
+<span class="comment"># Window function — count variants per 100kb bin per chrom</span>
+df = con.execute(<span class="str">"""
+    SELECT chrom,
+           pos // 100000 AS bin,
+           COUNT(*) AS n_var,
+           AVG(qual) AS mean_q
+    FROM variants
+    WHERE qual &gt; 30
+    GROUP BY chrom, bin
+    ORDER BY chrom, bin
+"""</span>).df()  <span class="comment"># .df() converts to pandas zero-copy via Arrow</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">sql_files.py — query files directly</span><pre><span class="kw">import</span> duckdb
+
+<span class="comment"># Parquet on disk → SQL → pandas, no import step</span>
+duckdb.sql(<span class="str">"""
+    SELECT chrom, COUNT(*) AS n
+    FROM 'variants_partitioned/*/*.parquet'
+    WHERE qual &gt; 30
+    GROUP BY chrom
+"""</span>).df()
+
+<span class="comment"># CSV.gz on S3, no download:</span>
+duckdb.sql(<span class="str">"INSTALL httpfs; LOAD httpfs;"</span>)
+duckdb.sql(<span class="str">"""
+    SELECT COUNT(*) FROM 's3://bucket/variants/*.csv.gz'
+    WHERE qual &gt; 30
+"""</span>).df()
+
+<span class="comment"># JOIN across formats: Parquet + CSV + Pandas DF in same query</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">interop.py — pandas/polars/arrow zero-copy</span><pre><span class="kw">import</span> duckdb, pandas <span class="kw">as</span> pd, polars <span class="kw">as</span> pl
+
+pdf  = pd.DataFrame({<span class="str">"gene"</span>:[<span class="str">"TP53"</span>,<span class="str">"BRCA1"</span>], <span class="str">"score"</span>:[<span class="num">9</span>,<span class="num">7</span>]})
+pldf = pl.DataFrame({<span class="str">"gene"</span>:[<span class="str">"TP53"</span>,<span class="str">"EGFR"</span>], <span class="str">"hits"</span>:[<span class="num">50</span>,<span class="num">30</span>]})
+
+<span class="comment"># DuckDB sees `pdf` and `pldf` as if they were SQL tables — zero copy</span>
+result = duckdb.sql(<span class="str">"""
+    SELECT pdf.gene, pdf.score, pldf.hits
+    FROM pdf JOIN pldf USING (gene)
+"""</span>)
+result.df()    <span class="comment"># back to pandas</span>
+result.pl()    <span class="comment"># back to polars</span>
+result.arrow() <span class="comment"># back to arrow Table</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">duckdb.R</span><pre><span class="kw">library</span>(duckdb)
+<span class="kw">library</span>(DBI)
+<span class="kw">library</span>(dplyr)
+<span class="kw">library</span>(dbplyr)
+
+con &lt;- dbConnect(duckdb(), <span class="str">":memory:"</span>)
+
+<span class="comment"># Query Parquet directly</span>
+dbGetQuery(con, <span class="str">"
+  SELECT chrom, COUNT(*) AS n
+  FROM 'variants_partitioned/*/*.parquet'
+  WHERE qual &gt; 30
+  GROUP BY chrom
+"</span>)
+
+<span class="comment"># Or use dbplyr — write tidyverse, run as SQL</span>
+v &lt;- tbl(con, <span class="str">"variants"</span>)
+v %&gt;% <span class="func">filter</span>(qual &gt; <span class="num">30</span>) %&gt;% <span class="func">count</span>(chrom) %&gt;% <span class="func">collect</span>()
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: Dask + Arrow Dataset + R data.table / arrow ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、out-of-core：Dask、Arrow Dataset、data.table、R arrow" data-en="III. Out-of-core: Dask, Arrow Dataset, data.table, R arrow">三、out-of-core：Dask、Arrow Dataset、data.table、R arrow</h2>
+<div data-lang="zh">
+<p>當資料超過單機 RAM 但仍能放上一顆 SSD，<strong>out-of-core</strong> (磁碟分塊) 是首選。Dask 提供 pandas-like API + lazy DAG，能跨多核或多機。R 端的對等物是 <code>arrow::open_dataset()</code> + dbplyr 寫 lazy query；<code>data.table</code> 雖然是 in-RAM，但在記憶體允許下幾乎是 R 最快的單機方案。</p>
+</div>
+<div data-lang="en">
+<p>When data exceeds RAM but fits on SSD, <strong>out-of-core</strong> (disk-chunked) is the way. Dask gives a pandas-like API + lazy DAG, scaling across cores or machines. The R equivalent is <code>arrow::open_dataset()</code> + dbplyr; <code>data.table</code> stays in-RAM but is essentially the fastest single-machine R option when memory allows.</p>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">dask.py</button>
+<button class="code-tab-btn">arrow_dataset.R</button>
+<button class="code-tab-btn">data_table.R</button>
+<button class="code-tab-btn">spark_hail.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">dask.py — pandas API, out-of-core</span><pre><span class="kw">import</span> dask.dataframe <span class="kw">as</span> dd
+
+<span class="comment"># Loads only chunk metadata; data stays on disk</span>
+ddf = dd.read_parquet(<span class="str">"variants_partitioned/"</span>)
+
+result = (ddf[ddf.qual &gt; <span class="num">30</span>]
+          .groupby(<span class="str">"chrom"</span>)
+          .agg({<span class="str">"pos"</span>: <span class="str">"count"</span>, <span class="str">"qual"</span>: <span class="str">"mean"</span>}))
+
+<span class="comment"># Nothing computed until .compute() — like Polars LazyFrame</span>
+out = result.compute()
+
+<span class="comment"># Distributed across machines:</span>
+<span class="kw">from</span> dask.distributed <span class="kw">import</span> Client
+client = Client(<span class="str">"tcp://scheduler:8786"</span>)
+out = result.compute()    <span class="comment"># now runs across the cluster</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">arrow_dataset.R — R out-of-core</span><pre><span class="kw">library</span>(arrow)
+<span class="kw">library</span>(dplyr)
+
+<span class="comment"># Multi-file lazy dataset — partitioning auto-detected</span>
+ds &lt;- open_dataset(<span class="str">"variants_partitioned/"</span>,
+                   partitioning = <span class="str">"chrom"</span>)
+
+ds %&gt;%
+  <span class="func">filter</span>(qual &gt; <span class="num">30</span>) %&gt;%
+  <span class="func">group_by</span>(chrom) %&gt;%
+  <span class="func">summarise</span>(n = <span class="func">n</span>(), mean_q = <span class="func">mean</span>(qual)) %&gt;%
+  <span class="func">collect</span>()      <span class="comment"># now executes with pushdown</span>
+
+<span class="comment"># Works on 500GB on a laptop with 16GB RAM</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">data_table.R — in-RAM speed king for R</span><pre><span class="kw">library</span>(data.table)
+
+<span class="comment"># fread is 5-10× faster than read.csv on big files</span>
+DT &lt;- <span class="func">fread</span>(<span class="str">"variants.tsv"</span>)
+
+<span class="comment"># DT[i, j, by] grammar — extremely fast</span>
+DT[qual &gt; <span class="num">30</span>, .(n = .N, mean_q = <span class="func">mean</span>(qual)), by = chrom]
+
+<span class="comment"># In-place update without copy (key feature):</span>
+DT[, gene_id := paste0(chrom, <span class="str">"_"</span>, pos)]
+
+<span class="comment"># Set key for binary-search joins</span>
+<span class="func">setkey</span>(DT, chrom, pos)
+DT[CJ(<span class="str">"chr17"</span>, <span class="num">7575000</span>:<span class="num">7590000</span>)]   <span class="comment"># instant region query</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">spark_hail.py — when you really need distributed</span><pre><span class="comment"># PySpark — generic distributed DataFrame</span>
+<span class="kw">from</span> pyspark.sql <span class="kw">import</span> SparkSession, functions <span class="kw">as</span> F
+spark = SparkSession.builder.appName(<span class="str">"variants"</span>).getOrCreate()
+
+df = spark.read.parquet(<span class="str">"s3://genomics/variants/*.parquet"</span>)
+(df.<span class="func">filter</span>(F.col(<span class="str">"qual"</span>) &gt; <span class="num">30</span>)
+   .groupBy(<span class="str">"chrom"</span>).count()
+   .show())
+
+<span class="comment"># Hail — genomics-native distributed (built on Spark) for variant data</span>
+<span class="kw">import</span> hail <span class="kw">as</span> hl
+hl.init()
+mt = hl.read_matrix_table(<span class="str">"gs://bucket/gnomad.mt"</span>)
+mt = mt.<span class="func">filter_rows</span>(mt.info.AF[<span class="num">0</span>] &gt; <span class="num">0.01</span>)
+mt.aggregate_rows(hl.agg.counter(mt.locus.contig))
+
+<span class="comment"># Glow — VCF/genomic SQL on top of Spark</span>
+<span class="comment">#   spark.read.format("vcf").load("variants.vcf")</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: Comparison Table ===== -->
+<section class="section">
+<div class="section-label" data-zh="比較" data-en="COMPARISON">比較</div>
+<h2 data-zh="四、五大工具總覽" data-en="IV. The five tools at a glance">四、五大工具總覽</h2>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="工具" data-en="Tool">工具</th>
+<th data-zh="執行模式" data-en="Execution">執行模式</th>
+<th data-zh="最大資料" data-en="Max data">最大資料</th>
+<th data-zh="API 風格" data-en="API style">API 風格</th>
+<th data-zh="生醫適用" data-en="Bio fit">生醫適用</th>
+</tr></thead><tbody>
+<tr><td>pandas / dplyr</td>
+  <td>eager, in-RAM, single-thread</td>
+  <td>~RAM / 2</td>
+  <td data-zh="DataFrame / verbs" data-en="DataFrame / verbs">DataFrame / verbs</td>
+  <td data-zh="樣本層級表、QC 報表" data-en="Sample-level tables, QC">樣本層級表、QC 報表</td></tr>
+<tr><td>Polars</td>
+  <td>eager + lazy, multi-thread, Rust</td>
+  <td>~RAM (or larger w/ streaming)</td>
+  <td data-zh="DataFrame, dplyr-ish" data-en="DataFrame, dplyr-ish">DataFrame, dplyr-ish</td>
+  <td data-zh="VCF 後處理、變異註釋表" data-en="VCF post-processing, annotations">VCF 後處理、變異註釋表</td></tr>
+<tr><td>DuckDB</td>
+  <td>lazy SQL, multi-thread, OLAP</td>
+  <td>~10× RAM (spills to disk)</td>
+  <td>SQL (+ dbplyr / pandas)</td>
+  <td data-zh="多檔 Parquet/CSV 聯查" data-en="Cross-file Parquet/CSV joins">多檔 Parquet/CSV 聯查</td></tr>
+<tr><td>Dask / arrow open_dataset</td>
+  <td>lazy DAG, out-of-core, distributed</td>
+  <td data-zh="磁碟大小或叢集" data-en="Disk or cluster">磁碟大小或叢集</td>
+  <td>pandas-like / dplyr-like</td>
+  <td data-zh="跨樣本批次分析" data-en="Cross-sample batch analysis">跨樣本批次分析</td></tr>
+<tr><td>Spark / Hail / Glow</td>
+  <td>distributed JVM</td>
+  <td data-zh="TB-PB 叢集" data-en="TB-PB cluster">TB-PB 叢集</td>
+  <td>DataFrame / SQL / Hail expr</td>
+  <td data-zh="全人群 variant calling、gnomAD-scale" data-en="Population variant calling, gnomAD-scale">全人群 variant calling、gnomAD-scale</td></tr>
+</tbody></table>
+</section>
+
+<!-- ===== Interactive Panel: Memory & Speed Comparator ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="五、記憶體 & 速度比較模擬器" data-en="V. Memory & Speed Comparator">五、記憶體 & 速度比較模擬器</h2>
+
+<div class="interactive-panel">
+<h3 data-zh="輸入資料量，估算各工具的 RAM 與執行時間" data-en="Enter row count, see estimated RAM and runtime per tool">輸入資料量，估算各工具的 RAM 與執行時間</h3>
+<p data-lang="zh" style="font-size:.92rem">假設每列 ~200 bytes (variant + annotations)；查詢為 filter + groupby。估算僅供相對比較。</p>
+<p data-lang="en" style="font-size:.92rem">Assumes ~200 bytes/row (variant + annotation); query = filter + groupby. Estimates are for relative comparison only.</p>
+<div class="slider-group"><label><span data-zh="資料量 (百萬列)" data-en="Rows (M)">資料量</span> <span id="rowsLbl">100</span> M</label>
+<input type="range" id="sliderRows" min="1" max="2000" value="100" step="1"></div>
+<div class="sim-stats">
+  <span class="sim-stat fail" id="statPandas">pandas: — GB / — s</span>
+  <span class="sim-stat pass" id="statPolars">polars (lazy): — GB / — s</span>
+  <span class="sim-stat pass" id="statDuck">duckdb: — GB / — s</span>
+  <span class="sim-stat info" id="statDask">dask (out-of-core): — GB / — s</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 7: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個引擎？" data-en="Which engine do I need?">該用哪個引擎？</h2>
+
+<div class="decision-tree">
+<h4 data-zh="情境 → 引擎對照" data-en="Situation → Engine">情境 → 引擎對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「資料 &lt; 5GB，分析一次性」</strong> → pandas / dplyr 就好</span><span data-lang="en"><strong>"Data &lt;5GB, one-off analysis"</strong> → pandas/dplyr is fine</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「5-50GB、單機、Python 環境」</strong> → Polars (lazy mode)</span><span data-lang="en"><strong>"5-50GB, single machine, Python"</strong> → Polars (lazy mode)</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「想用 SQL，且要查多份 Parquet」</strong> → DuckDB</span><span data-lang="en"><strong>"Want SQL across multiple Parquet files"</strong> → DuckDB</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「資料 50GB-1TB、單機、R」</strong> → arrow::open_dataset() + dplyr</span><span data-lang="en"><strong>"50GB-1TB, single machine, R"</strong> → arrow::open_dataset() + dplyr</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「R 純 in-RAM 速度第一」</strong> → data.table</span><span data-lang="en"><strong>"R in-RAM, max speed"</strong> → data.table</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「跨機器、全基因組 variant calling」</strong> → Spark + Hail / Glow</span><span data-lang="en"><strong>"Multi-machine whole-genome variant calling"</strong> → Spark + Hail/Glow</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> Polars 的 <code>LazyFrame</code> 相對於 pandas eager 執行的最大優勢是？</p>
+<p data-lang="en"><strong>Q1.</strong> Polars's <code>LazyFrame</code> vs pandas eager — biggest win?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 自動把資料寫到雲端</span><span data-lang="en">A. Auto-saves to the cloud</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 永遠用 0 RAM</span><span data-lang="en">B. Always uses 0 RAM</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 整體 query plan 最佳化 (predicate / projection pushdown、合併運算)</span><span data-lang="en">C. Whole-plan optimization (predicate/projection pushdown, op fusion)</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 自動將 DataFrame 變成 GPU array</span><span data-lang="en">D. Auto-converts DataFrame to GPU array</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Lazy 模式讓 Polars 在執行前看到整個 query plan，可以把 filter 推到掃描階段、只讀需要的欄位、合併 group_by 與 agg——這些都是 eager pandas 做不到的。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Lazy mode lets Polars see the full plan before running — push filters down to scan, project only needed columns, fuse group_by with agg. Pandas eager can't do these.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q2.</strong> 你有 200 個 Parquet 檔，想用 SQL 跨檔聚合，且不想啟動資料庫服務。最佳工具？</p>
+<p data-lang="en"><strong>Q2.</strong> 200 Parquet files, want SQL across all, but no database server. Best tool?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. PostgreSQL</span><span data-lang="en">A. PostgreSQL</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. DuckDB</span><span data-lang="en">B. DuckDB</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. SQLite</span><span data-lang="en">C. SQLite</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. MongoDB</span><span data-lang="en">D. MongoDB</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>DuckDB 是 in-process OLAP 引擎，原生支援 <code>SELECT * FROM 'data/*.parquet'</code>，零組態、零伺服器。SQLite 是 OLTP，列式儲存與 Parquet 直查皆不擅長。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> DuckDB is an in-process OLAP engine with native <code>SELECT * FROM 'data/*.parquet'</code> support — zero config, no server. SQLite is OLTP and lacks Parquet/columnar native support.</div>
+</div>
+
+<div class="quiz-q" data-correct="D">
+<p data-lang="zh"><strong>Q3.</strong> 何時 Spark / Hail 才是合理選擇？</p>
+<p data-lang="en"><strong>Q3.</strong> When does Spark / Hail actually pay off?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 10MB metadata 表的清理</span><span data-lang="en">A. Cleaning a 10MB metadata table</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 一個樣本的差異表現分析</span><span data-lang="en">B. Single-sample differential expression</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 100 個樣本的 PCA 視覺化</span><span data-lang="en">C. PCA visualization on 100 samples</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 數萬人全基因組 variant 跨群體頻率分析 (gnomAD scale)</span><span data-lang="en">D. Cross-cohort variant frequency on 10k+ whole genomes (gnomAD scale)</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 D。</strong>Spark / Hail 的啟動成本很高，只在資料 &gt; 單機 RAM 數十倍、且需要跨節點計算時才划算。小資料用 Spark 是反模式。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: D.</strong> Spark/Hail have heavy startup cost; they pay off only when data dwarfs single-machine RAM and requires multi-node computation. Spark on small data is an anti-pattern.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="bio-data-formats.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Prev">← 上一頁</span><span class="nav-title" data-zh="C1 · 生醫資料格式" data-en="C1 · Bio data formats">C1 · 生醫資料格式</span></a>
+<a href="databases-bio.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="C3 · 資料庫與 REST API" data-en="C3 · Databases & REST APIs">C3 · 資料庫與 REST API</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · C2 大型資料表處理</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Memory & speed comparator
+function updateBigDataSim(){
+  const M = +document.getElementById('sliderRows').value;
+  document.getElementById('rowsLbl').textContent = M;
+  const rowBytes = 200;
+  const baseGB = M * rowBytes / 1024;   // M rows * bytes / 1024 → MB; /1024 → GB
+  const dataGB = baseGB / 1024;          // total nominal size in GB
+
+  // pandas: ~3x size of data (copies in groupby); time ~ 0.4 s per GB scanned
+  const pdGB = dataGB * 3;
+  const pdS  = M * 0.05;        // ~50ms per million rows
+
+  // polars lazy: ~1x size, multi-threaded ~ 0.05 s per GB
+  const plGB = dataGB * 1;
+  const plS  = M * 0.005;
+
+  // duckdb: spills to disk, peak ~0.4x data, runtime similar to polars
+  const ddGB = dataGB * 0.4;
+  const ddS  = M * 0.006;
+
+  // dask out-of-core: ~few hundred MB constant + IO bound
+  const dkGB = 0.5 + dataGB * 0.05;
+  const dkS  = M * 0.015;
+
+  const fmt = (g,s) => `${g.toFixed(2)} GB / ${s.toFixed(1)} s`;
+  document.getElementById('statPandas').textContent = `pandas:        ${fmt(pdGB, pdS)}`;
+  document.getElementById('statPolars').textContent = `polars (lazy): ${fmt(plGB, plS)}`;
+  document.getElementById('statDuck'  ).textContent = `duckdb:        ${fmt(ddGB, ddS)}`;
+  document.getElementById('statDask'  ).textContent = `dask (OOC):    ${fmt(dkGB, dkS)}`;
+}
+document.getElementById('sliderRows').addEventListener('input', updateBigDataSim);
+updateBigDataSim();
+</script>
+</body></html>

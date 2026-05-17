@@ -1,0 +1,616 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>D3: 套件開發與發布 · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK D · TOPIC 15 / 20</div>
+<h1 data-zh="套件開發與發布：PyPI、CRAN、Bioconductor" data-en="Package Development & Publishing: PyPI, CRAN, Bioconductor">套件開發與發布：PyPI、CRAN、Bioconductor</h1>
+<p class="subtitle" data-lang="zh">從 scripts/ 到 <code>pip install mypkg</code> 或 <code>install.packages("mypkg")</code>——pyproject.toml、uv、src/ layout、Sphinx、PyPI trusted publishing、usethis、pkgdown、BiocCheck。</p>
+<p class="subtitle" data-lang="en">From scripts/ to <code>pip install mypkg</code> or <code>install.packages("mypkg")</code> — pyproject.toml, uv, src/ layout, Sphinx, PyPI trusted publishing, usethis, pkgdown, BiocCheck.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼要做成套件？" data-en="Why package your code?">為什麼要做成套件？</h2>
+<div data-lang="zh">
+<p>把分析放在 <code>scripts/</code> 資料夾然後互相 import 看似省事，但會碰到：</p>
+<ul>
+<li><strong>無版本可指定：</strong>「請用 v1.2.3 重現我的圖」——可是你只有 GitHub main。</li>
+<li><strong>依賴混亂：</strong>同事裝完發現要手動補 5 個包，每個版本還不一定相容。</li>
+<li><strong>不能 cite：</strong>審稿要 DOI/Zenodo 連結，scripts 沒辦法給。</li>
+<li><strong>無法重用：</strong>下一個 paper 要把 QC 函式抽出來，發現它 import 了一個寫死路徑的 config。</li>
+</ul>
+<p>本章六個主題：<strong>Python 現代打包</strong>、<strong>uv 與 versioning</strong>、<strong>文件 (Sphinx + pkgdown)</strong>、<strong>PyPI 發布</strong>、<strong>R 套件流程 (usethis / R CMD check)</strong>、<strong>Bioconductor / R-universe</strong>。</p>
+</div>
+<div data-lang="en">
+<p>Keeping analyses in <code>scripts/</code> with cross-imports feels light but breaks down:</p>
+<ul>
+<li><strong>No version pin:</strong> "Reproduce with v1.2.3" — but you only have GitHub main.</li>
+<li><strong>Dependency chaos:</strong> Colleagues install and manually patch 5 packages, hoping versions align.</li>
+<li><strong>Can't cite:</strong> Reviewers ask for a DOI/Zenodo link — scripts can't give one.</li>
+<li><strong>Can't reuse:</strong> Next paper, you try to lift the QC function — turns out it imports a hard-coded config path.</li>
+</ul>
+<p>The six topics: <strong>Modern Python packaging</strong>, <strong>uv + versioning</strong>, <strong>Docs (Sphinx + pkgdown)</strong>, <strong>PyPI publishing</strong>, <strong>R package workflow (usethis / R CMD check)</strong>, <strong>Bioconductor / R-universe</strong>.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>口訣：</strong>「能 import 的、能 pip install 的、能 cite DOI 的——這是 reproducible research 的三層門檻。」</span>
+<span data-lang="en"><strong>Mantra:</strong> "Importable, pip-installable, cite-by-DOI — the three tiers of reproducible research."</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Python pyproject.toml ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Python 現代打包：pyproject.toml + src/ layout" data-en="I. Modern Python packaging: pyproject.toml + src/ layout">一、Python 現代打包</h2>
+<div data-lang="zh"><p>2025 標準作法：所有 metadata 集中在 <code>pyproject.toml</code> (PEP 621)，build backend 可選 <code>hatchling</code> (推薦)、<code>setuptools</code>、<code>poetry-core</code>、<code>flit</code>。源碼放在 <code>src/mypkg/</code> 避免 import shadow 問題。</p></div>
+<div data-lang="en"><p>2025 default: all metadata in <code>pyproject.toml</code> (PEP 621); build backend is <code>hatchling</code> (recommended), <code>setuptools</code>, <code>poetry-core</code>, or <code>flit</code>. Source lives in <code>src/mypkg/</code> to prevent import-shadowing.</p></div>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="Build backend" data-en="Build backend">Build backend</th>
+<th data-zh="速度" data-en="Speed">速度</th>
+<th data-zh="設定複雜度" data-en="Config complexity">設定複雜度</th>
+<th data-zh="VCS 版本支援" data-en="VCS version">VCS 版本支援</th>
+<th data-zh="建議用途" data-en="When to use">建議用途</th>
+</tr></thead><tbody>
+<tr><td><code>hatchling</code></td><td data-zh="快" data-en="Fast">快</td><td data-zh="低" data-en="Low">低</td><td data-zh="hatch-vcs ✅" data-en="hatch-vcs ✅">hatch-vcs ✅</td><td data-zh="新專案首選" data-en="Default for new projects">新專案首選</td></tr>
+<tr><td><code>setuptools</code></td><td data-zh="中" data-en="Medium">中</td><td data-zh="中" data-en="Medium">中</td><td data-zh="setuptools_scm ✅" data-en="setuptools_scm ✅">setuptools_scm ✅</td><td data-zh="legacy / 有 C 擴充" data-en="Legacy / C extensions">legacy / C 擴充</td></tr>
+<tr><td><code>poetry-core</code></td><td data-zh="中" data-en="Medium">中</td><td data-zh="高 (poetry.lock)" data-en="High (poetry.lock)">高</td><td data-zh="poetry-dynamic-versioning" data-en="poetry-dynamic-versioning">需 plugin</td><td data-zh="喜歡 lock file 模式" data-en="If you prefer poetry's lockfile">需 lockfile</td></tr>
+<tr><td><code>flit-core</code></td><td data-zh="快" data-en="Fast">快</td><td data-zh="最低" data-en="Lowest">最低</td><td>❌</td><td data-zh="極小套件" data-en="Tiny packages">極小套件</td></tr>
+</tbody></table>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">pyproject.toml</button>
+<button class="code-tab-btn">layout.txt</button>
+<button class="code-tab-btn">cli.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">pyproject.toml — hatchling + hatch-vcs</span><pre><span class="str">[build-system]</span>
+requires = [<span class="str">"hatchling"</span>, <span class="str">"hatch-vcs"</span>]
+build-backend = <span class="str">"hatchling.build"</span>
+
+<span class="str">[project]</span>
+name = <span class="str">"scqc"</span>
+dynamic = [<span class="str">"version"</span>]            <span class="comment"># version comes from git tag</span>
+description = <span class="str">"scRNA-seq QC made boring."</span>
+readme = <span class="str">"README.md"</span>
+requires-python = <span class="str">"&gt;=3.11"</span>
+license = {text = <span class="str">"MIT"</span>}
+authors = [{name = <span class="str">"Charlene"</span>, email = <span class="str">"x@example.org"</span>}]
+keywords = [<span class="str">"single-cell"</span>, <span class="str">"qc"</span>, <span class="str">"scanpy"</span>]
+classifiers = [
+    <span class="str">"Development Status :: 4 - Beta"</span>,
+    <span class="str">"Programming Language :: Python :: 3.11"</span>,
+    <span class="str">"Programming Language :: Python :: 3.12"</span>,
+]
+dependencies = [
+    <span class="str">"anndata&gt;=0.10"</span>,
+    <span class="str">"scanpy&gt;=1.10"</span>,
+    <span class="str">"pydantic&gt;=2"</span>,
+]
+
+<span class="str">[project.optional-dependencies]</span>
+dev  = [<span class="str">"pytest"</span>, <span class="str">"pytest-cov"</span>, <span class="str">"ruff"</span>, <span class="str">"mypy"</span>]
+docs = [<span class="str">"sphinx"</span>, <span class="str">"furo"</span>, <span class="str">"myst-parser"</span>, <span class="str">"sphinx-autoapi"</span>]
+
+<span class="str">[project.scripts]</span>
+scqc = <span class="str">"scqc.cli:main"</span>          <span class="comment"># installs `scqc` CLI on PATH</span>
+
+<span class="str">[project.urls]</span>
+Homepage = <span class="str">"https://github.com/lab/scqc"</span>
+Docs     = <span class="str">"https://scqc.readthedocs.io"</span>
+
+<span class="str">[tool.hatch.version]</span>
+source = <span class="str">"vcs"</span>                    <span class="comment"># reads `git describe --tags`</span>
+
+<span class="str">[tool.hatch.build.targets.wheel]</span>
+packages = [<span class="str">"src/scqc"</span>]
+</pre></div>
+<div class="code-tab-content"><span class="filename">layout.txt — recommended src/ structure</span><pre>scqc/
+├── pyproject.toml
+├── README.md
+├── LICENSE
+├── CHANGELOG.md
+├── .pre-commit-config.yaml
+├── .github/
+│   └── workflows/
+│       ├── test.yml
+│       └── publish.yml
+├── src/
+│   └── scqc/
+│       ├── __init__.py
+│       ├── _version.py       <span class="comment"># auto-generated by hatch-vcs</span>
+│       ├── cli.py
+│       ├── qc.py
+│       └── io.py
+├── tests/
+│   ├── conftest.py
+│   ├── test_qc.py
+│   └── data/
+│       └── mini.h5ad
+└── docs/
+    ├── conf.py
+    ├── index.md
+    └── api/                  <span class="comment"># auto-generated by sphinx-autoapi</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">src/scqc/cli.py — entry point</span><pre><span class="kw">import</span> argparse, sys
+<span class="kw">from</span> .qc <span class="kw">import</span> filter_cells
+<span class="kw">from</span> .io <span class="kw">import</span> read_anndata, write_anndata
+<span class="kw">from</span> . <span class="kw">import</span> __version__
+
+<span class="kw">def</span> <span class="func">main</span>(argv: list[str] | <span class="kw">None</span> = <span class="kw">None</span>) -&gt; int:
+    p = argparse.ArgumentParser(prog=<span class="str">"scqc"</span>)
+    p.add_argument(<span class="str">"-V"</span>, <span class="str">"--version"</span>, action=<span class="str">"version"</span>, version=__version__)
+    p.add_argument(<span class="str">"input"</span>);  p.add_argument(<span class="str">"output"</span>)
+    p.add_argument(<span class="str">"--min-counts"</span>, type=int, default=<span class="num">500</span>)
+    args = p.parse_args(argv)
+
+    adata = read_anndata(args.input)
+    adata = filter_cells(adata, min_counts=args.min_counts)
+    write_anndata(adata, args.output)
+    <span class="kw">return</span> <span class="num">0</span>
+
+<span class="kw">if</span> __name__ == <span class="str">"__main__"</span>:
+    sys.exit(main())
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 3: uv + versioning ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、uv 與 SemVer / VCS 版本" data-en="II. uv + SemVer / VCS versioning">二、uv 與版本控制</h2>
+<div data-lang="zh"><p><a href="https://docs.astral.sh/uv/"><code>uv</code></a> 是 Astral 用 Rust 寫的新一代 Python 套件管理工具，速度比 pip/poetry 快 10-100×，整合 lock file、virtualenv、Python interpreter 安裝。版本號用 <strong>SemVer</strong> (MAJOR.MINOR.PATCH)，並用 <code>hatch-vcs</code> 從 git tag 自動讀取。</p></div>
+<div data-lang="en"><p><a href="https://docs.astral.sh/uv/"><code>uv</code></a> is Astral's Rust-written next-gen Python package manager — 10-100× faster than pip/poetry, integrates lock file, virtualenv, and Python interpreter install. Versions follow <strong>SemVer</strong> (MAJOR.MINOR.PATCH); <code>hatch-vcs</code> derives them from git tags.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">uv-workflow.sh</button>
+<button class="code-tab-btn">semver.txt</button>
+<button class="code-tab-btn">release.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">uv-workflow.sh</span><pre><span class="comment"># Install (one-time)</span>
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+<span class="comment"># In a new package directory</span>
+uv init --lib scqc            <span class="comment"># scaffold src/scqc</span>
+cd scqc
+uv add anndata scanpy pydantic
+uv add --dev pytest ruff mypy
+
+<span class="comment"># Run something inside the venv (auto-created)</span>
+uv run pytest
+uv run python -c <span class="str">"import scqc; print(scqc.__version__)"</span>
+
+<span class="comment"># Sync from lock file (CI)</span>
+uv sync --all-extras
+
+<span class="comment"># Build wheel + sdist</span>
+uv build           <span class="comment"># or: python -m build</span>
+
+<span class="comment"># Publish (uses trusted publishing if configured)</span>
+uv publish
+</pre></div>
+<div class="code-tab-content"><span class="filename">semver.txt — Semantic Versioning</span><pre>MAJOR.MINOR.PATCH        (e.g. 2.4.1)
+
+  PATCH 0 → 1     bug fixes only, no API change
+                  e.g. 1.2.0 → 1.2.1
+
+  MINOR 4 → 5     new feature, backward-compatible
+                  e.g. 1.2.0 → 1.3.0
+
+  MAJOR 1 → 2     breaking API change
+                  e.g. 1.2.0 → 2.0.0
+
+Pre-release & build metadata (PEP 440):
+  1.0.0a1         alpha
+  1.0.0b1         beta
+  1.0.0rc1        release candidate
+  1.0.0.dev3      dev snapshot
+  1.0.0.post1     post-release fix
+  1.0.0+gpu       local build identifier
+
+Bioconductor rule (separate):
+  Devel branch  : x.y.z where y is odd  (1.3.x = devel)
+  Release branch: x.y.z where y is even (1.4.x = stable)
+</pre></div>
+<div class="code-tab-content"><span class="filename">release.sh — cut a new version</span><pre><span class="comment"># 1. Update CHANGELOG.md (or use towncrier / git-cliff)</span>
+git-cliff --tag v0.4.0 --output CHANGELOG.md
+
+<span class="comment"># 2. Commit changelog</span>
+git add CHANGELOG.md
+git commit -m <span class="str">"chore: prepare v0.4.0"</span>
+
+<span class="comment"># 3. Tag — hatch-vcs reads this</span>
+git tag -a v0.4.0 -m <span class="str">"v0.4.0: add doublet detection"</span>
+git push origin main --tags
+
+<span class="comment"># 4. GitHub Actions workflow (release.yml) auto-builds &amp; publishes to PyPI</span>
+<span class="comment">#    via OIDC trusted publishing (no API token in repo!)</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: Documentation ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、Sphinx + furo + autoapi (Python) / pkgdown (R)" data-en="III. Sphinx + furo + autoapi (Python) / pkgdown (R)">三、文件網站</h2>
+<div data-lang="zh"><p>Python 套件用 <strong>Sphinx</strong> + <strong>MyST</strong> (Markdown 擴展) + <strong>furo</strong> 或 <strong>pydata-sphinx-theme</strong> 主題 + <strong>sphinx-autoapi</strong> 自動從 docstring 生成 API 頁。R 套件用 <strong>pkgdown</strong>。兩者都可免費託管在 ReadTheDocs / Cloudflare Pages / GitHub Pages。</p></div>
+<div data-lang="en"><p>Python: <strong>Sphinx</strong> + <strong>MyST</strong> (Markdown) + <strong>furo</strong> / <strong>pydata-sphinx-theme</strong> + <strong>sphinx-autoapi</strong>. R: <strong>pkgdown</strong>. Both free-host on ReadTheDocs / Cloudflare Pages / GitHub Pages.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">docs/conf.py</button>
+<button class="code-tab-btn">readthedocs.yml</button>
+<button class="code-tab-btn">_pkgdown.yml</button>
+</div>
+<div class="code-tab-content active"><span class="filename">docs/conf.py — Sphinx</span><pre>project   = <span class="str">"scqc"</span>
+author    = <span class="str">"Charlene"</span>
+extensions = [
+    <span class="str">"myst_parser"</span>,            <span class="comment"># write docs in Markdown</span>
+    <span class="str">"autoapi.extension"</span>,      <span class="comment"># auto-generate API from docstrings</span>
+    <span class="str">"sphinx.ext.napoleon"</span>,    <span class="comment"># Google/Numpy-style docstrings</span>
+    <span class="str">"sphinx.ext.intersphinx"</span>, <span class="comment"># link to scanpy/anndata docs</span>
+    <span class="str">"sphinx_copybutton"</span>,
+]
+autoapi_dirs = [<span class="str">"../src/scqc"</span>]
+html_theme   = <span class="str">"furo"</span>           <span class="comment"># or: "pydata_sphinx_theme"</span>
+
+intersphinx_mapping = {
+    <span class="str">"scanpy"</span>:  (<span class="str">"https://scanpy.readthedocs.io/en/stable"</span>, <span class="kw">None</span>),
+    <span class="str">"anndata"</span>: (<span class="str">"https://anndata.readthedocs.io/en/stable"</span>, <span class="kw">None</span>),
+}
+myst_enable_extensions = [<span class="str">"colon_fence"</span>, <span class="str">"deflist"</span>]
+</pre></div>
+<div class="code-tab-content"><span class="filename">.readthedocs.yaml</span><pre>version: 2
+build:
+  os: ubuntu-22.04
+  tools:
+    python: <span class="str">"3.12"</span>
+sphinx:
+  configuration: docs/conf.py
+formats: [htmlzip, pdf]
+python:
+  install:
+    - method: pip
+      path: .
+      extra_requirements: [docs]
+</pre></div>
+<div class="code-tab-content"><span class="filename">_pkgdown.yml — R pkgdown</span><pre>url: https://lab.github.io/scqc-r
+template:
+  bootstrap: 5
+  bootswatch: flatly
+home:
+  title: scqcR — single-cell QC for R
+navbar:
+  structure:
+    left:  [intro, reference, articles, news]
+    right: [search, github]
+reference:
+  - title: <span class="str">"QC functions"</span>
+    contents:
+      - filter_cells
+      - filter_genes
+  - title: <span class="str">"IO"</span>
+    contents:
+      - read_sce
+      - write_sce
+articles:
+  - title: <span class="str">"Getting started"</span>
+    navbar: ~
+    contents: [getting-started, advanced-workflow]
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: PyPI publishing ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 4" data-en="TOPIC 4">主題 4</div>
+<h2 data-zh="四、PyPI 發布：Trusted Publishing (OIDC)" data-en="IV. Publishing to PyPI: Trusted Publishing (OIDC)">四、PyPI 發布</h2>
+<div data-lang="zh"><p>2024 後 PyPI 推薦 <strong>Trusted Publishing</strong>——GitHub Actions 透過 OIDC token 認證，不再需要在 repo 存 API key (避免外洩風險)。流程：(1) PyPI 後台註冊 trusted publisher，(2) GitHub workflow 加 <code>permissions: id-token: write</code>。</p></div>
+<div data-lang="en"><p>Since 2024 PyPI recommends <strong>Trusted Publishing</strong> — GitHub Actions authenticates via OIDC token, no API key in the repo (preventing leaks). Steps: (1) register a trusted publisher in PyPI settings; (2) add <code>permissions: id-token: write</code> to the workflow.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">publish.yml</button>
+<button class="code-tab-btn">testpypi.sh</button>
+</div>
+<div class="code-tab-content active"><span class="filename">.github/workflows/publish.yml</span><pre>name: Publish to PyPI
+on:
+  release:
+    types: [published]      <span class="comment"># fires when you click "Publish release" on GitHub</span>
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}        <span class="comment"># for hatch-vcs to see tags</span>
+      - uses: astral-sh/setup-uv@v3
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with: {name: dist, path: dist/}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi                 <span class="comment"># GitHub env with PyPI binding</span>
+    permissions:
+      id-token: write                 <span class="comment"># required for OIDC trusted publishing</span>
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: dist, path: dist/}
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        <span class="comment"># No password needed! OIDC handles auth.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">testpypi.sh — TestPyPI dry-run before real release</span><pre><span class="comment"># TestPyPI is a sandbox at https://test.pypi.org</span>
+<span class="comment"># Useful for verifying metadata, README rendering, install flow.</span>
+
+uv build
+uv publish --publish-url https://test.pypi.org/legacy/
+
+<span class="comment"># Try installing from TestPyPI</span>
+pip install --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            scqc
+
+<span class="comment"># Once happy: tag and let GitHub Actions publish to real PyPI.</span>
+</pre></div>
+</div>
+
+<div class="callout warn"><span class="callout-icon">⚠️</span><div>
+<span data-lang="zh"><strong>注意：</strong>PyPI 不允許「刪除版本後重複使用版本號」。如果你 publish 了 0.1.0，那個版本號永遠用掉了——即使刪除也不能 republish。永遠先用 TestPyPI 試跑。</span>
+<span data-lang="en"><strong>Warning:</strong> PyPI does not allow "delete version then reuse the number." Once 0.1.0 is published, that number is permanently burned — even after deletion. Always test on TestPyPI first.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 6: R package workflow ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 5" data-en="TOPIC 5">主題 5</div>
+<h2 data-zh="五、R 套件：usethis + roxygen2 + R CMD check" data-en="V. R packaging: usethis + roxygen2 + R CMD check">五、R 套件流程</h2>
+<div data-lang="zh"><p><code>usethis</code> 把 R 套件 boilerplate 自動化：建立骨架、設 .Rbuildignore、加 LICENSE、設 GitHub Actions……。<code>roxygen2</code> 從 <code>#'</code> 註解自動生成 .Rd 與 NAMESPACE。發布前用 <code>devtools::check()</code> 或 <code>rcmdcheck::rcmdcheck()</code> 跑 R CMD check。</p></div>
+<div data-lang="en"><p><code>usethis</code> automates R-package boilerplate: skeleton, .Rbuildignore, LICENSE, GitHub Actions. <code>roxygen2</code> turns <code>#'</code> comments into .Rd files and NAMESPACE. Before release, run <code>devtools::check()</code> or <code>rcmdcheck::rcmdcheck()</code>.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">setup.R</button>
+<button class="code-tab-btn">DESCRIPTION</button>
+<button class="code-tab-btn">roxygen.R</button>
+<button class="code-tab-btn">check.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">setup.R — usethis scaffolding</span><pre>library(usethis)
+
+create_package(<span class="str">"~/projects/scqcR"</span>)
+
+<span class="comment"># Inside the project</span>
+use_mit_license(<span class="str">"Charlene"</span>)
+use_readme_rmd()
+use_news_md()
+use_testthat(<span class="num">3</span>)
+use_roxygen_md()
+use_pkgdown()
+use_github_action(<span class="str">"check-standard"</span>)
+use_github_action(<span class="str">"test-coverage"</span>)
+use_github_action(<span class="str">"pkgdown"</span>)
+use_package(<span class="str">"SingleCellExperiment"</span>)   <span class="comment"># adds to Imports:</span>
+use_dev_package(<span class="str">"scran"</span>)               <span class="comment"># Suggests: + Remotes:</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">DESCRIPTION</span><pre>Package: scqcR
+Type: Package
+Title: Single-cell RNA-seq QC for R
+Version: 0.4.0
+Authors@R: person(<span class="str">"Charlene"</span>, email = <span class="str">"x@example.org"</span>,
+                  role = c(<span class="str">"aut"</span>, <span class="str">"cre"</span>),
+                  comment = c(ORCID = <span class="str">"0000-0000-0000-0000"</span>))
+Description: Boring, reproducible quality control for scRNA-seq
+    data based on SingleCellExperiment.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: <span class="kw">true</span>
+Roxygen: list(markdown = <span class="kw">TRUE</span>)
+RoxygenNote: 7.3.2
+Depends: R (&gt;= 4.3)
+Imports:
+    SingleCellExperiment,
+    SummarizedExperiment,
+    S4Vectors,
+    ggplot2
+Suggests:
+    testthat (&gt;= 3.0.0),
+    knitr,
+    rmarkdown,
+    covr
+biocViews: SingleCell, QualityControl, Software
+URL: https://github.com/lab/scqcR
+BugReports: https://github.com/lab/scqcR/issues
+</pre></div>
+<div class="code-tab-content"><span class="filename">R/qc.R — roxygen2 docstring</span><pre><span class="comment">#' Filter low-quality cells</span>
+<span class="comment">#'</span>
+<span class="comment">#' Removes cells whose total counts fall below `min_counts`.</span>
+<span class="comment">#'</span>
+<span class="comment">#' @param sce A `SingleCellExperiment` with `colSums(counts(sce))` available.</span>
+<span class="comment">#' @param min_counts Numeric; minimum total UMIs per cell. Default 500.</span>
+<span class="comment">#' @return A filtered `SingleCellExperiment`.</span>
+<span class="comment">#' @examples</span>
+<span class="comment">#' sce &lt;- make_tiny_sce()</span>
+<span class="comment">#' filter_cells(sce, min_counts = 100)</span>
+<span class="comment">#' @export</span>
+filter_cells &lt;- function(sce, min_counts = <span class="num">500</span>) {
+  stopifnot(min_counts &gt;= <span class="num">0</span>)
+  keep &lt;- colSums(SummarizedExperiment::assay(sce, <span class="str">"counts"</span>)) &gt;= min_counts
+  sce[, keep]
+}
+</pre></div>
+<div class="code-tab-content"><span class="filename">check.R — pre-submission checklist</span><pre>devtools::document()                <span class="comment"># regenerate man/*.Rd + NAMESPACE</span>
+devtools::test()                    <span class="comment"># run testthat</span>
+devtools::check()                   <span class="comment"># R CMD check; aim for 0 errors / 0 warnings / 0 notes</span>
+
+<span class="comment"># Style + lint</span>
+styler::style_pkg()
+lintr::lint_package()
+
+<span class="comment"># Spell check</span>
+spelling::spell_check_package()
+
+<span class="comment"># Goodpractice analysis (rcmdcheck + cyclomatic complexity + ...)</span>
+goodpractice::gp()
+
+<span class="comment"># For Bioconductor submission, add:</span>
+BiocCheck::BiocCheck()              <span class="comment"># stricter than R CMD check</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 7: Bioc + R-universe ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 6" data-en="TOPIC 6">主題 6</div>
+<h2 data-zh="六、Bioconductor 與 R-universe 發布" data-en="VI. Publishing to Bioconductor and R-universe">六、Bioconductor 與 R-universe</h2>
+<div data-lang="zh">
+<p><strong>Bioconductor</strong> 是生醫資訊 R 套件的官方倉庫 (CRAN 旁的兄弟)，門檻高 (要過 <code>BiocCheck</code>、有 vignettes、用 S4 物件、半年一個版本)，但有「同個 Bioc 版本所有套件都會被一起 build/test」的優點，依賴一致性極高。<strong>R-universe</strong> 是 rOpenSci 提供的個人/組織級 CRAN-like 服務，幾分鐘上架，適合介於 GitHub 與 CRAN 之間的快速發布。</p>
+</div>
+<div data-lang="en">
+<p><strong>Bioconductor</strong> is the official biomedical R package repository (CRAN's sibling). High bar (<code>BiocCheck</code>, vignettes, S4 objects, twice-yearly release), but every package in a Bioc release is built and tested together — exceptional dependency consistency. <strong>R-universe</strong> (by rOpenSci) is a personal/org-level CRAN-like service — up in minutes; great for between-GitHub-and-CRAN distribution.</p>
+</div>
+
+<div class="interactive-panel">
+<h3 data-zh="發布前檢查清單" data-en="Pre-publish Checklist">發布前檢查清單</h3>
+<p data-lang="zh" style="font-size:.92rem">點擊每一項勾選；觀念性確認，不會真的檢查。</p>
+<p data-lang="en" style="font-size:.92rem">Click each box to toggle; conceptual reminder only — no real check.</p>
+<ul id="pubChecklist" style="list-style:none;padding:0;margin:.6rem 0">
+  <li class="chk-item" data-key="ver"><span class="chk-box">☐</span> <span data-zh="版本號遵循 SemVer (e.g. 0.4.0)" data-en="Version follows SemVer (e.g. 0.4.0)"></span></li>
+  <li class="chk-item" data-key="readme"><span class="chk-box">☐</span> <span data-zh="README.md 含安裝、快速範例" data-en="README.md has install + quick example"></span></li>
+  <li class="chk-item" data-key="license"><span class="chk-box">☐</span> <span data-zh="LICENSE 檔存在 (MIT / Apache-2.0 / GPL-3)" data-en="LICENSE file present (MIT / Apache-2.0 / GPL-3)"></span></li>
+  <li class="chk-item" data-key="changelog"><span class="chk-box">☐</span> <span data-zh="CHANGELOG.md / NEWS.md 已更新" data-en="CHANGELOG.md / NEWS.md updated"></span></li>
+  <li class="chk-item" data-key="tests"><span class="chk-box">☐</span> <span data-zh="所有測試通過 (pytest / R CMD check)" data-en="All tests pass (pytest / R CMD check)"></span></li>
+  <li class="chk-item" data-key="docs"><span class="chk-box">☐</span> <span data-zh="文件網站 build 成功 (Sphinx / pkgdown)" data-en="Docs site builds (Sphinx / pkgdown)"></span></li>
+  <li class="chk-item" data-key="ci"><span class="chk-box">☐</span> <span data-zh="CI 全綠 (GitHub Actions)" data-en="CI green (GitHub Actions)"></span></li>
+  <li class="chk-item" data-key="lint"><span class="chk-box">☐</span> <span data-zh="ruff/lintr/styler 無錯誤" data-en="ruff/lintr/styler clean"></span></li>
+  <li class="chk-item" data-key="testpypi"><span class="chk-box">☐</span> <span data-zh="TestPyPI / R-universe 試跑成功" data-en="Tested on TestPyPI / R-universe"></span></li>
+  <li class="chk-item" data-key="tag"><span class="chk-box">☐</span> <span data-zh="git tag 已建立並 push" data-en="Git tag created and pushed"></span></li>
+</ul>
+<div class="sim-stats">
+  <span class="sim-stat info" id="chkCount">0 / 10 ready</span>
+  <span class="sim-stat" id="chkVerdict">verdict: keep going</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 8: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該往哪裡發布？" data-en="Where should I publish?">該往哪裡發布？</h2>
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「Python 套件廣泛分享」</strong> → PyPI (用 trusted publishing)</span><span data-lang="en"><strong>"Python package, broad audience"</strong> → PyPI (with trusted publishing)</span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「R 通用套件」</strong> → CRAN；<strong>「R 生醫套件」</strong> → Bioconductor</span><span data-lang="en"><strong>"General R package"</strong> → CRAN; <strong>"Bioinformatics R package"</strong> → Bioconductor</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「R 想快速分享但 CRAN 太慢」</strong> → R-universe (個人/組織)</span><span data-lang="en"><strong>"R package fast distribution, CRAN too slow"</strong> → R-universe (personal/org)</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「實驗室內部工具」</strong> → GitHub + pip install git+ / remotes::install_github</span><span data-lang="en"><strong>"Lab-internal tool"</strong> → GitHub + pip install git+ / remotes::install_github</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「Python 文件託管」</strong> → ReadTheDocs (免費) 或 Cloudflare Pages</span><span data-lang="en"><strong>"Python docs hosting"</strong> → ReadTheDocs (free) or Cloudflare Pages</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「想拿 DOI 給審稿」</strong> → 設 Zenodo ↔ GitHub release 連動，每個 tag 自動拿 DOI</span><span data-lang="en"><strong>"Need a DOI for reviewers"</strong> → Link Zenodo ↔ GitHub release; each tag gets a DOI</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q1.</strong> 為什麼 src/ layout 比 flat layout 安全？</p>
+<p data-lang="en"><strong>Q1.</strong> Why is src/ layout safer than flat layout?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. src/ 跑得比較快</span><span data-lang="en">A. src/ runs faster</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. PyPI 規定必須用 src/</span><span data-lang="en">B. PyPI requires src/</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 避免「測試從專案根目錄 import 到沒安裝版本」的隱性 bug</span><span data-lang="en">C. Prevents tests accidentally importing the un-installed copy from the project root</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. src/ 比較容易上 Git LFS</span><span data-lang="en">D. src/ works better with Git LFS</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Flat layout (套件目錄與 tests/ 同層) 在跑 pytest 時可能直接 import 沒裝過的本機程式，遮蔽你 <code>pip install</code> 後該測的版本；src/ 強迫先 install 再測，更接近終端使用者體驗。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Flat layout (package next to tests/) lets pytest pick up the un-installed source, hiding what users would actually get after <code>pip install</code>. src/ forces install-then-test, mirroring the real install path.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q2.</strong> Trusted Publishing 相對於傳統 API token 的主要安全優點？</p>
+<p data-lang="en"><strong>Q2.</strong> Main security advantage of Trusted Publishing over API tokens?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 不需在 repo / secrets 保存長期 token，靠 OIDC 短期 token 驗證</span><span data-lang="en">A. No long-lived token in repo/secrets — OIDC short-lived token authenticates</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 上傳速度比較快</span><span data-lang="en">B. Faster upload</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 只能對 GitHub 私有 repo 使用</span><span data-lang="en">C. Only works on private GitHub repos</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 可以一次發布到 PyPI + Bioconductor</span><span data-lang="en">D. Publishes to PyPI + Bioconductor at once</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>傳統 API token 一旦外洩 (push 到公開 repo、log 印出)，攻擊者可長期惡意 publish。OIDC trusted publishing 用短期 token，過期即無效；且 PyPI 端綁定特定 GitHub repo + workflow，攻擊面大幅縮小。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> Long-lived API tokens, once leaked (pushed to a public repo, printed in logs), let attackers publish indefinitely. OIDC tokens are short-lived and PyPI binds them to a specific GitHub repo + workflow — drastically smaller attack surface.</div>
+</div>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q3.</strong> 下列關於 Bioconductor 的描述何者正確？</p>
+<p data-lang="en"><strong>Q3.</strong> Which statement about Bioconductor is correct?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 提交後幾分鐘自動上架 (像 PyPI)</span><span data-lang="en">A. Auto-publishes within minutes (like PyPI)</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 半年一個 release；所有套件被一起 build/test，依賴一致性高</span><span data-lang="en">B. Twice-yearly release; all packages built/tested together, strong dependency consistency</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 不允許用 S4 物件</span><span data-lang="en">C. Forbids S4 classes</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 比 CRAN 標準寬鬆</span><span data-lang="en">D. Has looser standards than CRAN</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>Bioconductor 半年一個 release (4 月 / 10 月)，devel 版本平行進行。提交流程嚴格 (BiocCheck 比 R CMD check 嚴)，要有 vignette、用 S4、有 biocViews。代價是嚴謹度——這也是它成為生醫資訊金標準的原因。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> Bioconductor releases twice yearly (April / October), with a parallel devel branch. Submission is strict (BiocCheck is harsher than R CMD check) — vignette required, S4 expected, biocViews mandatory. The strictness is exactly why Bioc is the bioinformatics gold standard.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="testing-strategies.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Previous">← 上一頁</span><span class="nav-title" data-zh="D2 · 測試策略" data-en="D2 · Testing Strategies">D2 · 測試策略</span></a>
+<a href="api-web-services.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="D4 · API 與 Web 服務" data-en="D4 · API & Web Services">D4 · API 與 Web 服務</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · D3 套件開發與發布</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Interactive: publishing checklist
+const checkState = {};
+document.querySelectorAll('.chk-item').forEach(item => {
+  checkState[item.dataset.key] = false;
+  item.style.cursor = 'pointer';
+  item.style.padding = '.3rem 0';
+  item.addEventListener('click', () => {
+    const key = item.dataset.key;
+    checkState[key] = !checkState[key];
+    const box = item.querySelector('.chk-box');
+    if (checkState[key]) {
+      box.textContent = '☑';
+      item.style.color = '#16a34a';
+      item.style.fontWeight = '600';
+    } else {
+      box.textContent = '☐';
+      item.style.color = '';
+      item.style.fontWeight = '';
+    }
+    const n = Object.values(checkState).filter(Boolean).length;
+    document.getElementById('chkCount').textContent = `${n} / 10 ready`;
+    const v = document.getElementById('chkVerdict');
+    if (n === 10) { v.textContent = 'verdict: ✅ ready to release'; v.className = 'sim-stat pass'; }
+    else if (n >= 7) { v.textContent = 'verdict: almost there'; v.className = 'sim-stat info'; }
+    else if (n >= 4) { v.textContent = 'verdict: in progress'; v.className = 'sim-stat info'; }
+    else { v.textContent = 'verdict: keep going'; v.className = 'sim-stat fail'; }
+  });
+});
+</script>
+</body></html>

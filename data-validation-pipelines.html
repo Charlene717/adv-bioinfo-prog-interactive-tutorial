@@ -1,0 +1,566 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>C4: 資料驗證與 ETL · Advanced Bioinformatics Programming</title>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>⚙️</span> <span data-zh="生醫資訊程式設計 (進階)" data-en="Adv. Bioinfo Programming">生醫資訊程式設計 (進階)</span></a>
+  <ul class="top-nav-links">
+    <li><a href="advanced-python.html">Python+</a></li>
+    <li><a href="advanced-r.html">R+</a></li>
+    <li><a href="functional-programming.html">FP</a></li>
+    <li><a href="error-handling-logging.html">Errors</a></li>
+    <li><a href="profiling-optimization.html">Profile</a></li>
+    <li><a href="parallel-computing.html">Parallel</a></li>
+    <li><a href="bio-data-formats.html">Formats</a></li>
+    <li><a href="testing-strategies.html">Test</a></li>
+    <li><a href="docker-containers.html">Docker</a></li>
+    <li><a href="workflow-engines.html">Workflow</a></li>
+  </ul>
+</div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">BLOCK C · TOPIC 12 / 20</div>
+<h1 data-zh="資料驗證與 ETL：別讓髒資料毀掉一篇論文" data-en="Data Validation & ETL: Don't Let Dirty Data Ruin a Paper">資料驗證與 ETL：別讓髒資料毀掉一篇論文</h1>
+<p class="subtitle" data-lang="zh">Differential expression 跑出來看不出 batch effect？clinical metadata 裡的 age 欄位有 "—" 與 -999？整篇分析最致命的 bug 通常在「資料還沒進統計模型之前」就埋好了。本章帶你用 Pandera、great_expectations、pointblank、validate 把資料污染擋在門外。</p>
+<p class="subtitle" data-lang="en">Why does differential expression look fine but the batch effect is invisible? Why does the age column have both "—" and -999? Most fatal bugs are baked in before the statistical model even runs. This chapter shows how Pandera, great_expectations, pointblank, and validate keep dirty data out.</p>
+</header>
+<main class="content-wrap">
+
+<!-- ===== Section 1: Why ===== -->
+<section class="section">
+<div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="garbage in, garbage out — 但你會發現嗎？" data-en="Garbage in, garbage out — will you notice?">garbage in, garbage out — 但你會發現嗎？</h2>
+<div data-lang="zh">
+<p>真實世界的生醫資料天生帶有四類污染：</p>
+<ul>
+<li><strong>Missing：</strong>缺失值不只是 <code>NA</code>，還可能是 <code>""</code>, <code>" "</code>, <code>"—"</code>, <code>-999</code>, <code>"NULL"</code>。</li>
+<li><strong>Outlier：</strong>RIN 值 = 25 (應 ≤ 10)、tumor purity = 1.4 (應 0-1)、age = 700。</li>
+<li><strong>Wrong dtype：</strong>"chr1" 跑進了應該是整數的 position 欄；2024 vs "2024-01-01" 在同一欄混用。</li>
+<li><strong>Impossible value：</strong>survival days = -3、batch 標籤含 typo (B1 vs b1 vs B_1)。</li>
+</ul>
+<p>沒有驗證層，這些值會直接污染下游：DE 列出的 top gene 是 batch effect；某個 cohort 的中位生存期是錯誤的；reviewer 在審稿期間發現一個 "—" → 整篇要重跑。<strong>schema-first</strong> 思維就是把這些檢查「寫成 code」放進 pipeline。</p>
+</div>
+<div data-lang="en">
+<p>Real-world bio data carries four types of pollution:</p>
+<ul>
+<li><strong>Missing:</strong> Not just <code>NA</code> — also <code>""</code>, <code>" "</code>, <code>"—"</code>, <code>-999</code>, <code>"NULL"</code>.</li>
+<li><strong>Outlier:</strong> RIN = 25 (should be ≤10), tumor purity = 1.4 (should be 0-1), age = 700.</li>
+<li><strong>Wrong dtype:</strong> "chr1" lands in an integer position column; 2024 mixed with "2024-01-01" in one column.</li>
+<li><strong>Impossible value:</strong> survival days = -3; batch label with typos (B1 vs b1 vs B_1).</li>
+</ul>
+<p>Without validation, these values pollute everything downstream: the top DE gene is a batch effect; a cohort's median survival is wrong; a reviewer spots a "—" mid-review → entire paper re-runs. <strong>Schema-first</strong> thinking means writing these checks as code in the pipeline itself.</p>
+</div>
+<div class="callout tip"><span class="callout-icon">💡</span><div>
+<span data-lang="zh"><strong>原則：</strong>raw → clean 之間一定要有一個明確的 validation step；validation fail 應該中斷 pipeline，而不是「警告繼續」。錯誤是訊號，不是 noise。</span>
+<span data-lang="en"><strong>Principle:</strong> Between raw and clean, there must be an explicit validation step. A validation failure should halt the pipeline, not "warn and continue." Errors are signal, not noise.</span>
+</div></div>
+</section>
+
+<!-- ===== Section 2: Pandera ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 1" data-en="TOPIC 1">主題 1</div>
+<h2 data-zh="一、Pandera — DataFrame schema-as-code" data-en="I. Pandera — DataFrame schema-as-code">一、Pandera — DataFrame schema-as-code</h2>
+<div data-lang="zh"><p>Pandera 讓你用 Python class 描述 DataFrame 應該長什麼樣：欄位、型別、值域、相互關係。可以驗證 pandas、polars、Dask；錯誤訊息會列出所有違規列。是「pytest 在資料層的對應物」。</p></div>
+<div data-lang="en"><p>Pandera lets you describe a DataFrame's expected shape as a Python class: columns, dtypes, value ranges, cross-column rules. Validates pandas, polars, and Dask. Error messages list every offending row. Think of it as "pytest for data."</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">schema.py</button>
+<button class="code-tab-btn">checks.py</button>
+<button class="code-tab-btn">decorator.py</button>
+<button class="code-tab-btn">hypothesis.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">schema.py — declare expected shape</span><pre><span class="kw">import</span> pandera <span class="kw">as</span> pa
+<span class="kw">from</span> pandera <span class="kw">import</span> Column, Check, DataFrameSchema
+
+clinical_schema = DataFrameSchema({
+    <span class="str">"sample_id"</span>: Column(str, Check.str_matches(<span class="str">r"^S\d{4}$"</span>), unique=<span class="kw">True</span>),
+    <span class="str">"age"</span>:       Column(<span class="kw">int</span>, Check.in_range(<span class="num">0</span>, <span class="num">120</span>)),
+    <span class="str">"sex"</span>:       Column(str, Check.isin([<span class="str">"M"</span>, <span class="str">"F"</span>])),
+    <span class="str">"tumor_purity"</span>: Column(<span class="kw">float</span>, Check.in_range(<span class="num">0.0</span>, <span class="num">1.0</span>),
+                              nullable=<span class="kw">True</span>),
+    <span class="str">"condition"</span>: Column(str, Check.isin([<span class="str">"tumor"</span>, <span class="str">"normal"</span>])),
+    <span class="str">"batch"</span>:     Column(str, Check.str_matches(<span class="str">r"^B\d+$"</span>)),
+    <span class="str">"rin"</span>:       Column(<span class="kw">float</span>, Check.in_range(<span class="num">0</span>, <span class="num">10</span>), nullable=<span class="kw">True</span>),
+    <span class="str">"date_collected"</span>: Column(<span class="str">"datetime64[ns]"</span>),
+})
+
+<span class="kw">import</span> pandas <span class="kw">as</span> pd
+df = pd.read_csv(<span class="str">"clinical.csv"</span>, parse_dates=[<span class="str">"date_collected"</span>])
+clinical_schema.validate(df, lazy=<span class="kw">True</span>)   <span class="comment"># raise with ALL errors</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">checks.py — cross-column / custom</span><pre><span class="kw">from</span> pandera <span class="kw">import</span> Check, DataFrameSchema, Column
+
+<span class="comment"># Custom check: tumor samples must have purity present</span>
+<span class="kw">def</span> <span class="func">_tumor_needs_purity</span>(df):
+    tumor = df[df.condition == <span class="str">"tumor"</span>]
+    <span class="kw">return</span> tumor.tumor_purity.notna().all()
+
+clinical_schema = DataFrameSchema(
+    columns={
+        <span class="str">"condition"</span>:    Column(str, Check.isin([<span class="str">"tumor"</span>,<span class="str">"normal"</span>])),
+        <span class="str">"tumor_purity"</span>: Column(<span class="kw">float</span>, nullable=<span class="kw">True</span>),
+    },
+    checks=[
+        Check(_tumor_needs_purity,
+              error=<span class="str">"every tumor sample must have a tumor_purity value"</span>),
+    ],
+)
+</pre></div>
+<div class="code-tab-content"><span class="filename">decorator.py — guard a function</span><pre><span class="kw">import</span> pandera <span class="kw">as</span> pa
+
+@pa.check_input(clinical_schema)
+@pa.check_output(  <span class="comment"># also validate the output</span>
+    DataFrameSchema({<span class="str">"sample_id"</span>: Column(str, unique=<span class="kw">True</span>),
+                     <span class="str">"log2fc"</span>:    Column(<span class="kw">float</span>),
+                     <span class="str">"padj"</span>:      Column(<span class="kw">float</span>, Check.in_range(<span class="num">0</span>, <span class="num">1</span>))})
+)
+<span class="kw">def</span> <span class="func">run_de</span>(meta: pd.DataFrame) -&gt; pd.DataFrame:
+    ...
+
+<span class="comment"># If `meta` violates clinical_schema, run_de() refuses to start.</span>
+<span class="comment"># Validation is documentation that can't go stale.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">hypothesis.py — generate test data</span><pre><span class="kw">import</span> pandera <span class="kw">as</span> pa
+<span class="kw">from</span> hypothesis <span class="kw">import</span> given
+
+<span class="comment"># Pandera schemas can produce a hypothesis strategy automatically.</span>
+<span class="comment"># pytest then runs your function on random valid data.</span>
+@given(clinical_schema.strategy(size=<span class="num">20</span>))
+<span class="kw">def</span> <span class="func">test_run_de_handles_random_input</span>(meta):
+    out = run_de(meta)
+    <span class="kw">assert</span> out.shape[<span class="num">0</span>] &gt; <span class="num">0</span>
+    <span class="kw">assert</span> (out.padj &gt;= <span class="num">0</span>).all()
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 3: great_expectations + pointblank + validate ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 2" data-en="TOPIC 2">主題 2</div>
+<h2 data-zh="二、great_expectations、pointblank、validate" data-en="II. great_expectations, pointblank, validate">二、great_expectations、pointblank、validate</h2>
+<div data-lang="zh"><p>Pandera 偏向「程式內 schema」。當資料工程規模再大、需要 <strong>產生 HTML data docs、追蹤 expectations 隨時間變化、生成 profile 報告</strong>，three more tools shine:</p>
+<ul>
+<li><strong>great_expectations</strong> (Python) — 企業級 data quality 框架，產出 docs、可串入 Airflow / dbt。</li>
+<li><strong>pointblank</strong> (R) — R 端對應物，產出漂亮的 validation report；CRAN 套件。</li>
+<li><strong>validate</strong> (R) — 學術派、規則語言豐富，內建 confront / cells / values 三層檢查。</li>
+</ul></div>
+<div data-lang="en"><p>Pandera fits "in-process schema." At larger data-engineering scale — <strong>HTML data docs, expectation drift over time, profiling reports</strong> — three more tools shine:</p>
+<ul>
+<li><strong>great_expectations</strong> (Python) — enterprise-grade DQ framework, generates docs, plugs into Airflow / dbt.</li>
+<li><strong>pointblank</strong> (R) — R counterpart, beautiful validation reports; CRAN package.</li>
+<li><strong>validate</strong> (R) — academic-style, rich rule language, confront / cells / values layers.</li>
+</ul></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">ge.py</button>
+<button class="code-tab-btn">pointblank.R</button>
+<button class="code-tab-btn">validate.R</button>
+<button class="code-tab-btn">pydantic.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">ge.py — great_expectations</span><pre><span class="kw">import</span> great_expectations <span class="kw">as</span> gx
+
+context = gx.get_context()
+suite   = context.add_or_update_expectation_suite(<span class="str">"clinical_v1"</span>)
+
+batch = context.get_batch({<span class="str">"datasource_name"</span>:<span class="str">"my_pandas"</span>,
+                           <span class="str">"runtime_parameters"</span>:{<span class="str">"batch_data"</span>: df},
+                           <span class="str">"batch_identifiers"</span>:{<span class="str">"default"</span>:<span class="str">"v1"</span>}})
+
+batch.expect_column_values_to_be_between(<span class="str">"age"</span>, <span class="num">0</span>, <span class="num">120</span>)
+batch.expect_column_values_to_be_in_set(<span class="str">"sex"</span>, [<span class="str">"M"</span>, <span class="str">"F"</span>])
+batch.expect_column_values_to_match_regex(<span class="str">"sample_id"</span>, <span class="str">r"^S\d{4}$"</span>)
+batch.expect_table_row_count_to_be_between(<span class="num">10</span>, <span class="num">10000</span>)
+
+result = batch.validate()
+context.build_data_docs()   <span class="comment"># browser-viewable HTML report</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">pointblank.R</span><pre><span class="kw">library</span>(pointblank)
+
+agent &lt;- <span class="func">create_agent</span>(tbl = clinical, label = <span class="str">"clinical v1"</span>) %&gt;%
+  <span class="func">col_vals_between</span>(age, <span class="num">0</span>, <span class="num">120</span>) %&gt;%
+  <span class="func">col_vals_in_set</span>(sex, <span class="func">c</span>(<span class="str">"M"</span>, <span class="str">"F"</span>)) %&gt;%
+  <span class="func">col_vals_regex</span>(sample_id, <span class="str">"^S\\d{4}$"</span>) %&gt;%
+  <span class="func">col_is_numeric</span>(tumor_purity) %&gt;%
+  <span class="func">col_vals_between</span>(tumor_purity, <span class="num">0</span>, <span class="num">1</span>, na_pass=<span class="kw">TRUE</span>) %&gt;%
+  <span class="func">interrogate</span>()
+
+<span class="func">print</span>(agent)             <span class="comment"># nicely formatted report</span>
+<span class="comment"># export_report(agent, "clinical_report.html")</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">validate.R</span><pre><span class="kw">library</span>(validate)
+
+rules &lt;- <span class="func">validator</span>(
+  age_ok       = age &gt;= <span class="num">0</span> &amp; age &lt;= <span class="num">120</span>,
+  sex_ok       = sex %in% <span class="func">c</span>(<span class="str">"M"</span>,<span class="str">"F"</span>),
+  purity_ok    = is.na(tumor_purity) | (tumor_purity &gt;= <span class="num">0</span> &amp; tumor_purity &lt;= <span class="num">1</span>),
+  unique_id    = <span class="func">is_unique</span>(sample_id),
+  tumor_purity = if (condition == <span class="str">"tumor"</span>) !<span class="func">is.na</span>(tumor_purity)
+)
+
+out &lt;- <span class="func">confront</span>(clinical, rules)
+<span class="func">summary</span>(out)
+<span class="comment"># Returns counts of pass / fail / NA per rule, per cell</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">pydantic.py — config validation</span><pre><span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, Field, field_validator
+<span class="kw">from</span> pathlib <span class="kw">import</span> Path
+<span class="kw">import</span> yaml
+
+<span class="comment"># Validate the YAML *config*, not the data — keep them separate concerns</span>
+<span class="kw">class</span> <span class="cls">DEConfig</span>(BaseModel):
+    counts_path:  Path
+    metadata_path: Path
+    formula:      str           = Field(min_length=<span class="num">1</span>)
+    fdr_cutoff:   <span class="kw">float</span>     = Field(<span class="num">0.05</span>, ge=<span class="num">0</span>, le=<span class="num">1</span>)
+    min_count:    int           = Field(<span class="num">10</span>, ge=<span class="num">0</span>)
+    contrasts:    <span class="kw">list</span>[<span class="kw">tuple</span>[str, str, str]]
+
+    <span class="kw">@</span><span class="func">field_validator</span>(<span class="str">"counts_path"</span>, <span class="str">"metadata_path"</span>)
+    <span class="kw">@</span><span class="func">classmethod</span>
+    <span class="kw">def</span> <span class="func">_exists</span>(<span class="kw">cls</span>, v):
+        <span class="kw">if not</span> v.exists():
+            <span class="kw">raise</span> <span class="cls">ValueError</span>(<span class="str">f"{v} does not exist"</span>)
+        <span class="kw">return</span> v
+
+cfg = DEConfig(**yaml.safe_load(open(<span class="str">"config.yaml"</span>)))
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 4: ETL patterns ===== -->
+<section class="section">
+<div class="section-label" data-zh="主題 3" data-en="TOPIC 3">主題 3</div>
+<h2 data-zh="三、ETL 設計模式：idempotent、retries、dead-letter queue、lineage" data-en="III. ETL design patterns: idempotency, retries, DLQ, lineage">三、ETL 設計模式：idempotent、retries、dead-letter queue、lineage</h2>
+<div data-lang="zh">
+<p>把 raw data → analysis-ready 拆成 <strong>Extract → Transform → Load</strong>。三個關鍵原則：</p>
+<ul>
+<li><strong>Idempotency：</strong>同一 input 跑 1 次 vs 跑 100 次的最終狀態必須相同。用 <code>UPSERT</code>、deterministic 檔名、或 hash-based 去重。</li>
+<li><strong>Retries with backoff：</strong>網路 / API 必失敗，要設 <code>tenacity</code> 或 Airflow retry policy。</li>
+<li><strong>Dead-letter queue (DLQ)：</strong>無法處理的紀錄應該寫入單獨檔案 (而非 crash 全 pipeline)。</li>
+<li><strong>Data lineage：</strong>記錄「這份結果由哪些 raw + commit + parameters 產生」。<code>OpenLineage</code> 是開源標準。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p>Split raw → analysis-ready into <strong>Extract → Transform → Load</strong>. Three key principles:</p>
+<ul>
+<li><strong>Idempotency:</strong> Running once vs 100× must leave the same final state. Use <code>UPSERT</code>, deterministic filenames, or hash-based dedup.</li>
+<li><strong>Retries with backoff:</strong> Network/API will fail — set <code>tenacity</code> or Airflow retry policies.</li>
+<li><strong>Dead-letter queue (DLQ):</strong> Unprocessable records go to a separate file (not crash the whole pipeline).</li>
+<li><strong>Data lineage:</strong> Record "which raw inputs + commit + parameters produced this result." <code>OpenLineage</code> is the open standard.</li>
+</ul>
+</div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">etl_skeleton.py</button>
+<button class="code-tab-btn">idempotent.py</button>
+<button class="code-tab-btn">dlq.py</button>
+<button class="code-tab-btn">lineage.py</button>
+</div>
+<div class="code-tab-content active"><span class="filename">etl_skeleton.py</span><pre><span class="kw">from</span> tenacity <span class="kw">import</span> retry, stop_after_attempt, wait_exponential
+<span class="kw">import</span> pandera <span class="kw">as</span> pa, logging
+
+log = logging.getLogger(__name__)
+
+<span class="kw">def</span> <span class="func">extract</span>(src) -&gt; pd.DataFrame:
+    raw = pd.read_csv(src)
+    log.info(<span class="str">f"extract: {len(raw)} rows from {src}"</span>)
+    <span class="kw">return</span> raw
+
+<span class="kw">def</span> <span class="func">transform</span>(raw: pd.DataFrame) -&gt; pd.DataFrame:
+    clean = (raw
+             .replace({<span class="str">"—"</span>: pd.NA, <span class="str">"NULL"</span>: pd.NA, <span class="str">""</span>: pd.NA, <span class="num">-999</span>: pd.NA})
+             .dropna(subset=[<span class="str">"sample_id"</span>])
+             .astype({<span class="str">"age"</span>: <span class="str">"Int64"</span>}))
+    clinical_schema.validate(clean, lazy=<span class="kw">True</span>)   <span class="comment"># &lt;-- validation gate</span>
+    <span class="kw">return</span> clean
+
+<span class="kw">@</span><span class="func">retry</span>(stop=stop_after_attempt(<span class="num">3</span>),
+       wait=wait_exponential(<span class="num">1</span>, <span class="num">2</span>, <span class="num">30</span>))
+<span class="kw">def</span> <span class="func">load</span>(clean: pd.DataFrame, dst: str):
+    clean.to_parquet(dst, index=<span class="kw">False</span>)
+    log.info(<span class="str">f"load: {len(clean)} rows -&gt; {dst}"</span>)
+
+<span class="comment"># orchestrate</span>
+load(transform(extract(<span class="str">"raw/clinical.csv"</span>)), <span class="str">"clean/clinical.parquet"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">idempotent.py — safe to re-run</span><pre><span class="kw">import</span> hashlib, pathlib
+
+<span class="kw">def</span> <span class="func">output_path</span>(input_path: str, params: dict) -&gt; pathlib.Path:
+    <span class="str">"""Deterministic filename = same inputs ⇒ same output path."""</span>
+    h = hashlib.sha256()
+    h.update(pathlib.Path(input_path).read_bytes())
+    h.update(<span class="func">repr</span>(<span class="func">sorted</span>(params.items())).encode())
+    <span class="kw">return</span> pathlib.Path(<span class="str">f"out/{h.hexdigest()[:12]}.parquet"</span>)
+
+<span class="kw">def</span> <span class="func">run_step</span>(input_path: str, params: dict):
+    out = output_path(input_path, params)
+    <span class="kw">if</span> out.exists():
+        log.info(<span class="str">f"skip — {out} already produced"</span>)
+        <span class="kw">return</span> out
+    df = transform(extract(input_path))
+    df.to_parquet(out)
+    <span class="kw">return</span> out
+
+<span class="comment"># Re-run the pipeline 100x → only the first time does work.</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">dlq.py — don't crash on bad rows</span><pre><span class="kw">import</span> pandera <span class="kw">as</span> pa
+
+<span class="kw">def</span> <span class="func">validate_with_dlq</span>(df, schema, dlq_path: str):
+    <span class="kw">try</span>:
+        ok = schema.validate(df, lazy=<span class="kw">True</span>)
+        <span class="kw">return</span> ok, <span class="num">0</span>
+    <span class="kw">except</span> pa.errors.SchemaErrors <span class="kw">as</span> err:
+        bad_idx = err.failure_cases.index.unique()
+        bad  = df.iloc[bad_idx]
+        good = df.drop(index=bad_idx)
+        bad.to_csv(dlq_path, index=<span class="kw">False</span>)
+        log.warning(<span class="str">f"{len(bad)} rows sent to DLQ {dlq_path}"</span>)
+        <span class="kw">return</span> good, <span class="func">len</span>(bad)
+
+clean, n_bad = validate_with_dlq(raw, clinical_schema, <span class="str">"dlq/clinical_bad.csv"</span>)
+</pre></div>
+<div class="code-tab-content"><span class="filename">lineage.py — record provenance</span><pre><span class="kw">import</span> json, subprocess, datetime <span class="kw">as</span> dt, hashlib, pathlib
+
+<span class="kw">def</span> <span class="func">write_lineage</span>(out_path: pathlib.Path, inputs: <span class="kw">list</span>[str], params: dict):
+    git_rev = subprocess.check_output([<span class="str">"git"</span>,<span class="str">"rev-parse"</span>,<span class="str">"HEAD"</span>]).strip().decode()
+    rec = {
+        <span class="str">"output"</span>:    <span class="func">str</span>(out_path),
+        <span class="str">"output_sha"</span>: hashlib.sha256(out_path.read_bytes()).hexdigest(),
+        <span class="str">"inputs"</span>:    [{<span class="str">"path"</span>:p,
+                       <span class="str">"sha"</span>: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()}
+                      <span class="kw">for</span> p <span class="kw">in</span> inputs],
+        <span class="str">"params"</span>:    params,
+        <span class="str">"git"</span>:       git_rev,
+        <span class="str">"timestamp"</span>: dt.datetime.now(dt.timezone.utc).isoformat(),
+    }
+    (out_path.with_suffix(<span class="str">".lineage.json"</span>)).write_text(json.dumps(rec, indent=<span class="num">2</span>))
+
+<span class="comment"># OpenLineage (https://openlineage.io) standardises this for Airflow/dbt/Spark.</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 5: Worked example — clinical metadata ===== -->
+<section class="section">
+<div class="section-label" data-zh="案例" data-en="WORKED EXAMPLE">案例</div>
+<h2 data-zh="四、實例：differential expression 前的 clinical metadata 驗證" data-en="IV. Worked example: validating clinical metadata before DE">四、實例：differential expression 前的 clinical metadata 驗證</h2>
+<div data-lang="zh"><p>下面這段是真實 RNA-seq pipeline 的「驗證關卡」：clinical metadata 必須通過 schema、batch 必須與 condition 不混淆 (沒有 confounding)、count matrix 樣本名必須與 metadata 對齊。</p></div>
+<div data-lang="en"><p>Real-world "validation gate" before a RNA-seq DE analysis: clinical metadata must pass schema, batch must not confound condition, and count-matrix sample names must align with metadata.</p></div>
+
+<div class="code-tabs">
+<div class="code-tab-btns">
+<button class="code-tab-btn active">before_de.py</button>
+<button class="code-tab-btn">before_de.R</button>
+</div>
+<div class="code-tab-content active"><span class="filename">before_de.py</span><pre><span class="kw">import</span> pandas <span class="kw">as</span> pd, pandera <span class="kw">as</span> pa
+<span class="kw">from</span> pandera <span class="kw">import</span> Column, Check, DataFrameSchema
+
+meta_schema = DataFrameSchema({
+    <span class="str">"sample_id"</span>: Column(str, unique=<span class="kw">True</span>),
+    <span class="str">"condition"</span>: Column(str, Check.isin([<span class="str">"tumor"</span>,<span class="str">"normal"</span>])),
+    <span class="str">"batch"</span>:     Column(str),
+    <span class="str">"age"</span>:       Column(<span class="kw">int</span>, Check.in_range(<span class="num">0</span>, <span class="num">120</span>)),
+})
+
+<span class="kw">def</span> <span class="func">no_perfect_confounding</span>(df):
+    <span class="comment"># every batch must contain both tumor and normal</span>
+    by_batch = df.groupby(<span class="str">"batch"</span>)[<span class="str">"condition"</span>].nunique()
+    <span class="kw">return</span> (by_batch &gt;= <span class="num">2</span>).all()
+
+meta_schema_full = meta_schema.add_checks([
+    Check(no_perfect_confounding,
+          error=<span class="str">"some batch contains only one condition — batch confounds condition"</span>)
+])
+
+meta   = pd.read_csv(<span class="str">"clinical.csv"</span>)
+counts = pd.read_csv(<span class="str">"counts.tsv"</span>, sep=<span class="str">"\t"</span>, index_col=<span class="num">0</span>)
+meta_schema_full.validate(meta, lazy=<span class="kw">True</span>)
+<span class="kw">assert</span> <span class="func">set</span>(counts.columns) == <span class="func">set</span>(meta.sample_id), <span class="str">"count/meta mismatch"</span>
+<span class="comment"># Only now do DESeq2 / edgeR / limma</span>
+</pre></div>
+<div class="code-tab-content"><span class="filename">before_de.R</span><pre><span class="kw">library</span>(validate); <span class="kw">library</span>(dplyr); <span class="kw">library</span>(readr)
+
+meta &lt;- <span class="func">read_csv</span>(<span class="str">"clinical.csv"</span>)
+cts  &lt;- <span class="func">read_tsv</span>(<span class="str">"counts.tsv"</span>)
+
+rules &lt;- <span class="func">validator</span>(
+  unique_id = <span class="func">is_unique</span>(sample_id),
+  cond_ok   = condition %in% <span class="func">c</span>(<span class="str">"tumor"</span>,<span class="str">"normal"</span>),
+  age_ok    = age &gt;= <span class="num">0</span> &amp; age &lt;= <span class="num">120</span>,
+  no_conf   = <span class="func">all</span>(<span class="func">tapply</span>(condition, batch, <span class="kw">function</span>(x) <span class="func">length</span>(<span class="func">unique</span>(x))) &gt;= <span class="num">2</span>)
+)
+out &lt;- <span class="func">confront</span>(meta, rules)
+<span class="kw">if</span> (<span class="func">any</span>(<span class="func">values</span>(out) == <span class="kw">FALSE</span>, na.rm=<span class="kw">TRUE</span>)) <span class="func">stop</span>(<span class="str">"metadata validation failed"</span>)
+
+<span class="func">stopifnot</span>(<span class="func">setequal</span>(<span class="func">colnames</span>(cts)[-<span class="num">1</span>], meta$sample_id))
+<span class="comment"># DESeq2 etc. follows...</span>
+</pre></div>
+</div>
+</section>
+
+<!-- ===== Section 6: Comparison Table ===== -->
+<section class="section">
+<div class="section-label" data-zh="比較" data-en="COMPARISON">比較</div>
+<h2 data-zh="五、工具總表" data-en="V. Tool summary">五、工具總表</h2>
+
+<table class="comp-table"><thead><tr>
+<th data-zh="工具" data-en="Tool">工具</th>
+<th data-zh="語言" data-en="Lang">語言</th>
+<th data-zh="風格" data-en="Style">風格</th>
+<th data-zh="HTML 報告" data-en="HTML report">HTML 報告</th>
+<th data-zh="最佳應用" data-en="Best for">最佳應用</th>
+</tr></thead><tbody>
+<tr><td>Pandera</td><td>Python</td><td data-zh="schema-as-code" data-en="schema-as-code">schema-as-code</td><td>○</td>
+  <td data-zh="函式入口檢查、與 pytest/hypothesis 整合" data-en="Function-entry checks, pytest/hypothesis integration">函式入口檢查、pytest 整合</td></tr>
+<tr><td>great_expectations</td><td>Python</td><td data-zh="expectation suite" data-en="expectation suite">expectation suite</td><td>✅</td>
+  <td data-zh="生產 ETL、data docs、Airflow/dbt" data-en="Production ETL, data docs, Airflow/dbt">生產 ETL、data docs</td></tr>
+<tr><td>pointblank</td><td>R</td><td data-zh="agent + steps" data-en="agent + steps">agent + steps</td><td>✅</td>
+  <td data-zh="R 端豐富 report、Rmd / Quarto" data-en="R-side rich report, Rmd/Quarto">R 端豐富報表、Quarto</td></tr>
+<tr><td>validate</td><td>R</td><td data-zh="rule language" data-en="rule language">rule language</td><td>○</td>
+  <td data-zh="學術派、規則導向、cells/values 層次" data-en="Academic, rule-oriented, cells/values">學術派、規則為中心</td></tr>
+<tr><td>pydantic</td><td>Python</td><td data-zh="row/object 級 schema" data-en="row/object schema">row/object 級 schema</td><td>❌</td>
+  <td data-zh="設定檔、API 邊界、單筆紀錄" data-en="Configs, API edges, single records">設定檔、API 邊界</td></tr>
+</tbody></table>
+</section>
+
+<!-- ===== Interactive Panel: Validation playground ===== -->
+<section class="section">
+<div class="section-label" data-zh="互動" data-en="INTERACTIVE">互動</div>
+<h2 data-zh="六、Validation Playground" data-en="VI. Validation Playground">六、Validation Playground</h2>
+
+<div class="interactive-panel">
+<h3 data-zh="切換污染類型，看哪一條 Pandera 規則會抓到" data-en="Toggle a contamination type, see which Pandera rule catches it">切換污染類型，看哪一條 Pandera 規則會抓到</h3>
+<div class="slider-group">
+<label><span data-zh="污染類型" data-en="Pollution type">污染類型</span></label>
+<select id="valKind">
+  <option value="missing">missing — age = "—"</option>
+  <option value="outlier">outlier — RIN = 25</option>
+  <option value="dtype">wrong dtype — pos = "chr1"</option>
+  <option value="impossible">impossible — survival_days = -3</option>
+  <option value="typo">typo / inconsistent — batch = "B_1"</option>
+  <option value="dup">duplicate — sample_id repeated</option>
+  <option value="confound">confounding — every B1 sample is tumor</option>
+</select>
+</div>
+<div class="sim-stats">
+  <span class="sim-stat pass" id="valRule" style="white-space:pre-wrap">Pandera rule that catches it: —</span>
+  <span class="sim-stat info" id="valWhy"  style="white-space:pre-wrap">Why it matters: —</span>
+</div>
+</div>
+</section>
+
+<!-- ===== Section 8: Decision Tree ===== -->
+<section class="section">
+<div class="section-label" data-zh="決策樹" data-en="DECISION TREE">決策樹</div>
+<h2 data-zh="該用哪個工具？" data-en="Which tool do I reach for?">該用哪個工具？</h2>
+
+<div class="decision-tree">
+<h4 data-zh="情境 → 工具對照" data-en="Situation → Tool">情境 → 工具對照</h4>
+<div class="dt-node"><span class="dt-q">Q1</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「Python pipeline 內函式入口檢查」</strong> → Pandera + <code>@check_input</code></span><span data-lang="en"><strong>"Python pipeline, validate at function entry"</strong> → Pandera + <code>@check_input</code></span></div>
+<div class="dt-node"><span class="dt-q">Q2</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「需要 HTML data docs、可給合作者看的歷史」</strong> → great_expectations 或 pointblank</span><span data-lang="en"><strong>"Need HTML data docs & history for collaborators"</strong> → great_expectations or pointblank</span></div>
+<div class="dt-node"><span class="dt-q">Q3</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「YAML / TOML 設定檔驗證」</strong> → pydantic (不是 Pandera)</span><span data-lang="en"><strong>"YAML/TOML config validation"</strong> → pydantic (not Pandera)</span></div>
+<div class="dt-node"><span class="dt-q">Q4</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「R 端、Quarto 報表、可發布的 validation report」</strong> → pointblank</span><span data-lang="en"><strong>"R-side, Quarto report, publishable validation"</strong> → pointblank</span></div>
+<div class="dt-node"><span class="dt-q">Q5</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「raw 偶爾有壞 row，但 pipeline 不能停」</strong> → DLQ pattern (壞 row 寫單檔，繼續跑)</span><span data-lang="en"><strong>"Raw has occasional bad rows but pipeline can't stop"</strong> → DLQ pattern</span></div>
+<div class="dt-node"><span class="dt-q">Q6</span><span class="dt-arrow">→</span><span data-lang="zh"><strong>「要證明這份結果是用哪些 raw + commit 跑的」</strong> → lineage / OpenLineage</span><span data-lang="en"><strong>"Prove which raw + commit produced this result"</strong> → lineage / OpenLineage</span></div>
+</div>
+</section>
+
+<!-- ===== Quiz ===== -->
+<section class="section">
+<div class="quiz-section">
+<h3 data-zh="📝 自我檢測 (3 題)" data-en="📝 Self-Check (3 questions)">📝 自我檢測 (3 題)</h3>
+
+<div class="quiz-q" data-correct="B">
+<p data-lang="zh"><strong>Q1.</strong> 下列何者最適合 <code>pydantic</code> 而非 <code>Pandera</code>？</p>
+<p data-lang="en"><strong>Q1.</strong> Which is best suited for <code>pydantic</code> rather than <code>Pandera</code>?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 5000 列 RNA-seq metadata 表的欄位驗證</span><span data-lang="en">A. Column-level validation of a 5000-row RNA-seq metadata table</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 從 YAML 載入的 pipeline 設定檔 (cutoffs、paths、formula)</span><span data-lang="en">B. Pipeline config loaded from YAML (cutoffs, paths, formula)</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 50GB 的變異註釋 DataFrame</span><span data-lang="en">C. 50GB variant-annotation DataFrame</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. great_expectations 的 HTML data docs</span><span data-lang="en">D. great_expectations HTML data docs</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 B。</strong>pydantic 是「單筆物件 / 設定檔級別」的驗證；DataFrame 級驗證選 Pandera。great_expectations 是另一種 DataFrame 工具，並非 pydantic 對應物。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: B.</strong> pydantic validates "single objects / configs"; DataFrame-level work belongs to Pandera. great_expectations is another DataFrame tool, not a pydantic peer.</div>
+</div>
+
+<div class="quiz-q" data-correct="C">
+<p data-lang="zh"><strong>Q2.</strong> idempotent ETL step 的核心特性是？</p>
+<p data-lang="en"><strong>Q2.</strong> What's the defining property of an idempotent ETL step?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 一定要用 Spark 才能達到</span><span data-lang="en">A. Achievable only with Spark</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 自動清理所有舊輸出</span><span data-lang="en">B. Auto-deletes all old outputs</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 同樣 input + params 跑 1 次與 100 次的最終狀態相同</span><span data-lang="en">C. Same inputs+params produce the same final state on 1× or 100× runs</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 必須儲存在資料庫而非檔案</span><span data-lang="en">D. Must be stored in a DB, not files</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 C。</strong>Idempotency = 結果只取決於 input + params；重跑不會造成資料重複、狀態漂移。典型實現是 UPSERT、deterministic 檔名、或 hash 命名。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: C.</strong> Idempotency means results depend only on inputs + params; re-runs don't duplicate or drift state. Typical implementations: UPSERT, deterministic filenames, or hash-based naming.</div>
+</div>
+
+<div class="quiz-q" data-correct="A">
+<p data-lang="zh"><strong>Q3.</strong> 你的 clinical metadata 表有少部分壞列 (age = -999)。最合理的處理流程是？</p>
+<p data-lang="en"><strong>Q3.</strong> Your clinical metadata has a few bad rows (age = -999). The right handling is?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-v="A"><span data-lang="zh">A. 用 Pandera 驗證；壞列轉到 DLQ；好列繼續分析，並 log 出污染數</span><span data-lang="en">A. Validate with Pandera; bad rows → DLQ; good rows continue; log contamination count</span></div>
+<div class="quiz-opt" data-v="B"><span data-lang="zh">B. 把 -999 改成 0 就好</span><span data-lang="en">B. Just replace -999 with 0</span></div>
+<div class="quiz-opt" data-v="C"><span data-lang="zh">C. 直接跑 DE，反正只有少數列</span><span data-lang="en">C. Run DE anyway, it's only a few rows</span></div>
+<div class="quiz-opt" data-v="D"><span data-lang="zh">D. 不要驗證，相信原始資料</span><span data-lang="en">D. Skip validation; trust the raw data</span></div>
+</div>
+<div class="quiz-feedback" data-lang="zh"><strong>答案 A。</strong>正確處理：(1) 明確 schema 抓到問題；(2) 壞列另存 DLQ 以便人工檢查；(3) 好列才進下游；(4) log 與 lineage 留下記錄。B 是悄悄篡改資料，C/D 是 wishful thinking。</div>
+<div class="quiz-feedback" data-lang="en"><strong>Answer: A.</strong> The right flow: (1) schema catches the issue; (2) bad rows go to a DLQ for human review; (3) good rows feed downstream; (4) log + lineage keep a record. B silently fabricates; C/D are wishful thinking.</div>
+</div>
+</div>
+</section>
+
+<!-- ===== Page Nav ===== -->
+<nav class="page-nav">
+<a href="databases-bio.html"><span class="nav-dir" data-zh="← 上一頁" data-en="← Prev">← 上一頁</span><span class="nav-title" data-zh="C3 · 資料庫與 REST API" data-en="C3 · Databases & REST APIs">C3 · 資料庫與 REST API</span></a>
+<a href="git-collaboration.html"><span class="nav-dir" data-zh="下一頁 →" data-en="Next →">下一頁 →</span><span class="nav-title" data-zh="D1 · Git 與共筆協作" data-en="D1 · Git & collaboration">D1 · Git 與共筆協作</span></a>
+</nav>
+
+</main>
+<footer class="site-footer">© Charlene — Advanced Bioinformatics Programming · C4 資料驗證與 ETL</footer>
+
+<script src="i18n.js"></script>
+<script>
+// Validation playground
+const valMap = {
+  missing: {
+    rule: 'Column("age", Check(lambda s: s.notna().all()))  → catches NaN/"—"\n(or use replace before validate to normalize)',
+    why:  'Missing values silently bias means / regressions and break statistical tests.'
+  },
+  outlier: {
+    rule: 'Column("rin", Check.in_range(0, 10))',
+    why:  'Out-of-range physical values usually mean unit mistakes or sentinel codes — they invalidate downstream stats.'
+  },
+  dtype: {
+    rule: 'Column("pos", int)  → coercion fails on "chr1"',
+    why:  'Wrong dtype crashes joins / sort by position and corrupts genome-coordinate logic.'
+  },
+  impossible: {
+    rule: 'Column("survival_days", Check.greater_than_or_equal_to(0))',
+    why:  'Negative survival days break Kaplan-Meier / Cox models; usually data-entry errors.'
+  },
+  typo: {
+    rule: 'Column("batch", Check.str_matches(r"^B\\d+$"))',
+    why:  'Inconsistent labels (B1 vs B_1 vs b1) split a real batch into two — destroys batch correction.'
+  },
+  dup: {
+    rule: 'Column("sample_id", unique=True)',
+    why:  'Duplicate sample IDs inflate sample sizes and double-count features in DE.'
+  },
+  confound: {
+    rule: 'DataFrameSchema(..., checks=[Check(no_perfect_confounding)])',
+    why:  'If every B1 sample is tumor, batch effect and biology cannot be separated — model is non-identifiable.'
+  },
+};
+function updateVal(){
+  const k = document.getElementById('valKind').value;
+  document.getElementById('valRule').textContent = 'Pandera rule that catches it:\n' + valMap[k].rule;
+  document.getElementById('valWhy' ).textContent = 'Why it matters: ' + valMap[k].why;
+}
+document.getElementById('valKind').addEventListener('change', updateVal);
+updateVal();
+</script>
+</body></html>
