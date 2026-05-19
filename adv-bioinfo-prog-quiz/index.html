@@ -7,8 +7,8 @@
 <style>
 :root{
   --bg:#f5f8fa; --card:#fff; --ink:#1a2733; --soft:#5a6b7b; --line:#e0e6eb;
-  --primary:#1a6b5a; --primary-soft:#e6f4f0; --primary-dark:#0f4a3e;
-  --accent:#2563a8; --accent-soft:#e6eff7;
+  --primary:#CE422B; --primary-soft:#F4E4E1; --primary-dark:#541B12;
+  --accent:#00897B; --accent-soft:#E0F5F3;
   --exam:#7c3aed; --exam-soft:#f3e8ff;
   --green:#2f9e44; --green-soft:#d3f9d8;
   --red:#c92a2a; --red-soft:#ffe3e3;
@@ -21,7 +21,7 @@
 html,body{margin:0;padding:0}
 body{font-family:-apple-system,"Segoe UI","PingFang TC","Microsoft JhengHei","Noto Sans TC",system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.6;font-size:16px}
 
-header{background:linear-gradient(135deg,#1a6b5a 0%,#2563a8 100%);color:#fff;padding:14px 22px;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+header{background:linear-gradient(135deg,var(--primary-dark) 0%,var(--primary) 100%);color:#fff;padding:14px 22px;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.08)}
 .h-row{max-width:1280px;margin:0 auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 h1{font-size:18px;margin:0;font-weight:700;display:flex;align-items:center;gap:8px}
 .homelink{color:#fff;text-decoration:none;font-size:13px;padding:5px 12px;border:1px solid rgba(255,255,255,.5);border-radius:999px;white-space:nowrap;cursor:pointer;background:transparent;font-family:inherit}
@@ -215,7 +215,7 @@ main{max-width:1280px;margin:22px auto;padding:0 18px 40px}
 <header>
   <div class="h-row" id="headerRow">
     <button class="homelink hidden" id="homeBtn" data-zh="&larr; 回首頁" data-en="&larr; Home">&larr; 回首頁</button>
-    <h1 id="hdrTitle" data-zh="⚙️ 生醫資訊程式設計 (進階) 互動考題" data-en="⚙️ Advanced Bioinformatics Programming Quiz">⚙️ 生醫資訊程式設計 (進階) 互動考題</h1>
+    <h1 id="hdrTitle" data-zh="⚙️ 進階生資程式設計 互動式考題" data-en="⚙️ Advanced Bioinformatics Programming Interactive Quiz">⚙️ 進階生資程式設計 互動式考題</h1>
     <span id="hdrModePill"></span>
     <button class="profile-pill" id="profileBtn" title="切換 / 管理使用者"><span class="pdot"></span><span class="pname" id="profileName" data-zh="預設使用者" data-en="Default user">預設使用者</span> ▾</button>
     <div class="stat" id="stat"></div>
@@ -379,7 +379,7 @@ main{max-width:1280px;margin:22px auto;padding:0 18px 40px}
   const EXAM_KEY = "advprog";
   const exam = D[EXAM_KEY];
   // ==== i18n helpers (read _en variants when lang=en, fallback to default) ====
-  function L(){ return (window.I18n && window.I18n.get) ? window.I18n.get() : 'zh'; }
+  function L(){ return (window.I18n && window.I18n.get) ? window.I18n.get() : 'en'; }
   function getQStem(q){ return (L()==='en' && q.stem_en) ? q.stem_en : q.stem; }
   function getQOpt(q, k){ return (L()==='en' && q[k+'_en']) ? q[k+'_en'] : q[k]; }
   function getQExp(q){ return (L()==='en' && q.exp_en) ? q.exp_en : q.exp; }

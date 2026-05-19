@@ -17,6 +17,7 @@
     <li><a href="docker-containers.html">Docker</a></li>
     <li><a href="workflow-engines.html">Workflow</a></li>
     <li><a href="hpc-cloud-bio.html" class="active">HPC</a></li>
+    <li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
   </ul>
 </div></nav>
 <div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
@@ -384,7 +385,7 @@ function updateCost(){
   document.getElementById('cEgress').textContent  = `egress: $${egress.toFixed(0)}`;
   document.getElementById('cTotal').textContent   = `total: $${total.toFixed(0)}`;
 
-  const cur = (window.I18n && window.I18n.get && window.I18n.get()) || 'zh';
+  const cur = (window.I18n && window.I18n.get && window.I18n.get()) || 'en';
   let advice_zh = '', advice_en = '';
   if(egress > compute){
     advice_zh = '⚠️ 你的 egress 費比計算費還高——強烈建議在雲端完成分析，僅下載小體積結果。';

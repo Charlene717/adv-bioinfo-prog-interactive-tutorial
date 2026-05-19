@@ -17,6 +17,7 @@
     <li><a href="docker-containers.html">Docker</a></li>
     <li><a href="workflow-engines.html" class="active">Workflow</a></li>
     <li><a href="hpc-cloud-bio.html">HPC</a></li>
+    <li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
   </ul>
 </div></nav>
 <div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
@@ -438,7 +439,7 @@ function updateWfRec(){
   }
   document.getElementById('wfTool').textContent = tool;
   const reasonEl = document.getElementById('wfReason');
-  const cur = (window.I18n && window.I18n.get && window.I18n.get()) || 'zh';
+  const cur = (window.I18n && window.I18n.get && window.I18n.get()) || 'en';
   reasonEl.textContent = cur==='zh' ? why_zh : why_en;
   reasonEl.dataset.zh = why_zh;
   reasonEl.dataset.en = why_en;

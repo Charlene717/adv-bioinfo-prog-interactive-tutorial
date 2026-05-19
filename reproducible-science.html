@@ -17,6 +17,7 @@
     <li><a href="docker-containers.html">Docker</a></li>
     <li><a href="workflow-engines.html">Workflow</a></li>
     <li><a href="hpc-cloud-bio.html">HPC</a></li>
+    <li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
   </ul>
 </div></nav>
 <div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
@@ -414,7 +415,7 @@ function updateRepoScore(){
   tierEl.dataset.zh = tier_zh; tierEl.dataset.en = tier_en;
   const advEl = document.getElementById('repoAdvice');
   advEl.dataset.zh = adv_zh; advEl.dataset.en = adv_en;
-  const cur = (window.I18n && window.I18n.get && window.I18n.get()) || 'zh';
+  const cur = (window.I18n && window.I18n.get && window.I18n.get()) || 'en';
   tierEl.textContent = cur==='zh' ? tier_zh : tier_en;
   advEl.textContent  = cur==='zh' ? adv_zh  : adv_en;
 }
